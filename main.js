@@ -45,17 +45,6 @@ class StorageManager {
         });
     }
     
-    async update(item) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([this.storeName], 'readwrite');
-            const store = transaction.objectStore(this.storeName);
-            const request = store.put(item);
-            
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-    
     async delete(id) {
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([this.storeName], 'readwrite');
@@ -121,7 +110,6 @@ class StorageManager {
             };
         }
         
-        // 降级：估算已使用空间
         const all = await this.getAll();
         let totalSize = 0;
         for (const item of all) {
@@ -132,7 +120,7 @@ class StorageManager {
         
         return {
             usage: totalSize,
-            quota: 100 * 1024 * 1024 // 假设 100MB
+            quota: 10 * 1024 * 1024
         };
     }
 }
@@ -155,13 +143,10 @@ class WebPageSaver {
         this.previewTitle = document.getElementById('previewTitle');
         this.toast = document.getElementById('toast');
         
-        // 当前预览的内容
         this.currentPreviewItem = null;
-        
-        // 使用 IndexedDB 存储
         this.storage = new StorageManager();
         
-        // CORS代理列表（按优先级排序）
+        // CORS代理列表
         this.corsProxies = [
             'https://api.allorigins.win/raw?url=',
             'https://corsproxy.io/?',
@@ -170,15 +155,20 @@ class WebPageSaver {
         
         this.currentProxyIndex = 0;
         
-        // 缓存已下载的资源，避免重复下载
+        // 资源缓存
         this.resourceCache = new Map();
         
-        // 初始化
+        // 统计
+        this.stats = {
+            imagesProcessed: 0,
+            imagesSuccess: 0,
+            imagesFailed: 0
+        };
+        
         this.init();
     }
     
     async init() {
-        // 初始化 IndexedDB
         try {
             await this.storage.init();
             console.log('IndexedDB 初始化成功');
@@ -187,39 +177,30 @@ class WebPageSaver {
             this.showToast('存储初始化失败，请刷新页面重试', 'error');
         }
         
-        // 保存按钮事件
         this.saveBtn.addEventListener('click', () => this.save());
         this.urlInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.save();
         });
         
-        // 搜索功能
         this.searchInput.addEventListener('input', () => this.renderHistory());
-        
-        // 清空历史
         this.clearAllBtn.addEventListener('click', () => this.clearAllHistory());
         
-        // 预览模态框事件
         document.getElementById('closeModal').addEventListener('click', () => this.closePreview());
         document.getElementById('closePreviewBtn').addEventListener('click', () => this.closePreview());
         document.getElementById('downloadFromPreview').addEventListener('click', () => this.downloadCurrentPreview());
         
-        // 点击遮罩关闭
         this.previewModal.addEventListener('click', (e) => {
             if (e.target === this.previewModal) this.closePreview();
         });
         
-        // ESC关闭预览
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') this.closePreview();
         });
         
-        // 加载历史记录
         await this.renderHistory();
         await this.updateStorageInfo();
     }
     
-    // 显示 Toast 提示
     showToast(message, type = 'info') {
         this.toast.textContent = message;
         this.toast.className = `toast show ${type}`;
@@ -242,7 +223,6 @@ class WebPageSaver {
         this.progressText.textContent = text;
     }
     
-    // 历史记录管理
     async getHistory() {
         try {
             return await this.storage.getAll();
@@ -293,7 +273,6 @@ class WebPageSaver {
         let history = await this.getHistory();
         const searchTerm = this.searchInput.value.toLowerCase().trim();
         
-        // 搜索过滤（只过滤元数据，不加载内容）
         if (searchTerm) {
             history = history.filter(item => 
                 (item.title && item.title.toLowerCase().includes(searchTerm)) ||
@@ -342,11 +321,9 @@ class WebPageSaver {
             
             this.storageSize.textContent = `${usedMB} MB / ${quotaMB} MB`;
             
-            // 更新存储条
             const storageBarFill = document.querySelector('.storage-bar-fill');
             if (storageBarFill) {
                 storageBarFill.style.width = `${percent}%`;
-                // 根据使用率改变颜色
                 if (percent > 80) {
                     storageBarFill.style.background = '#dc3545';
                 } else if (percent > 60) {
@@ -385,7 +362,6 @@ class WebPageSaver {
         return div.innerHTML;
     }
     
-    // 预览功能
     async preview(id) {
         try {
             const item = await this.storage.get(id);
@@ -397,8 +373,6 @@ class WebPageSaver {
             
             this.currentPreviewItem = item;
             this.previewTitle.textContent = item.title || '无标题';
-            
-            // 使用 srcdoc 加载内容
             this.previewFrame.srcdoc = item.content;
             this.previewModal.classList.add('active');
             document.body.style.overflow = 'hidden';
@@ -421,7 +395,6 @@ class WebPageSaver {
         }
     }
     
-    // 下载功能
     async download(id) {
         try {
             const item = await this.storage.get(id);
@@ -481,10 +454,8 @@ class WebPageSaver {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    const result = reader.result;
-                    // 缓存结果
-                    this.resourceCache.set(url, result);
-                    resolve(result);
+                    this.resourceCache.set(url, reader.result);
+                    resolve(reader.result);
                 };
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
@@ -496,16 +467,39 @@ class WebPageSaver {
     }
     
     resolveUrl(base, relative) {
+        if (!relative) return relative;
+        
+        // 处理 data: URI
+        if (relative.startsWith('data:')) return relative;
+        
+        // 处理协议相对路径
+        if (relative.startsWith('//')) {
+            return 'https:' + relative;
+        }
+        
+        // 处理绝对路径
+        if (relative.startsWith('http://') || relative.startsWith('https://')) {
+            return relative;
+        }
+        
         try {
-            // 处理协议相对路径 (//example.com/...)
-            if (relative && relative.startsWith('//')) {
-                const baseUrl = new URL(base);
-                return baseUrl.protocol + relative;
-            }
             return new URL(relative, base).href;
         } catch {
             return relative;
         }
+    }
+    
+    // 判断是否是图片 URL
+    isImageUrl(url) {
+        if (!url || url.startsWith('data:')) return false;
+        
+        // 移除查询参数和哈希
+        const cleanUrl = url.split('?')[0].split('#')[0];
+        
+        // 支持更多图片格式
+        return /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif|heic|heif|tiff?)(\?|$|#)/i.test(cleanUrl) ||
+               // 检查 URL 中是否包含图片相关关键词
+               /\/img\/|\/images\/|\/image\/|image\.|img\.|pic\.|photo\./i.test(url);
     }
     
     async save() {
@@ -521,7 +515,8 @@ class WebPageSaver {
             return;
         }
         
-        // 清空资源缓存
+        // 重置统计
+        this.stats = { imagesProcessed: 0, imagesSuccess: 0, imagesFailed: 0 };
         this.resourceCache.clear();
         
         this.saveBtn.disabled = true;
@@ -530,20 +525,16 @@ class WebPageSaver {
         this.showStatus('处理中...', 'info');
         
         try {
-            // 获取网页内容
             this.updateProgress(10, '正在获取网页HTML...');
             const response = await this.fetchWithProxy(url);
             let html = await response.text();
             
-            // 解析HTML
             this.updateProgress(20, '正在解析HTML...');
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
-            // 获取标题
             const title = doc.querySelector('title')?.textContent || url;
             
-            // 获取选项
             const options = {
                 inlineImages: document.getElementById('inlineImages').checked,
                 inlineCSS: document.getElementById('inlineCSS').checked,
@@ -551,7 +542,6 @@ class WebPageSaver {
                 removeScripts: document.getElementById('removeScripts').checked
             };
             
-            // 处理基础URL
             let baseUrl = url;
             const baseTag = doc.querySelector('base[href]');
             if (baseTag) {
@@ -567,7 +557,7 @@ class WebPageSaver {
             // 处理图片
             if (options.inlineImages) {
                 this.updateProgress(50, '正在处理图片...');
-                await this.processImages(doc, baseUrl);
+                await this.processAllImages(doc, baseUrl);
             }
             
             // 处理脚本
@@ -576,23 +566,19 @@ class WebPageSaver {
                 this.removeScripts(doc);
             }
             
-            // 添加保存信息
             this.updateProgress(80, '正在生成文件...');
             this.addSaveInfo(doc, url);
             
-            // 生成最终HTML
             this.updateProgress(90, '正在保存...');
             const finalHtml = this.serializeHTML(doc);
             const filename = this.getFilename(url);
             const size = new Blob([finalHtml]).size;
             
-            // 检查文件大小
             const sizeMB = size / 1024 / 1024;
-            if (sizeMB > 100) {
-                throw new Error(`文件过大 (${sizeMB.toFixed(2)} MB)，超过 100MB 限制`);
+            if (sizeMB > 10) {
+                throw new Error(`文件过大 (${sizeMB.toFixed(2)} MB)，超过 10MB 限制`);
             }
             
-            // 保存到 IndexedDB
             const historyItem = {
                 id: Date.now().toString(),
                 url: url,
@@ -605,14 +591,15 @@ class WebPageSaver {
             
             await this.addToHistory(historyItem);
             
-            // 下载文件
             this.updateProgress(100, '完成！');
             this.downloadHTML(finalHtml, filename);
             
-            this.showStatus(`✅ 网页已成功保存！(${this.formatSize(size)})`, 'success');
+            const imgStats = this.stats.imagesProcessed > 0 
+                ? ` (图片: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed})` 
+                : '';
+            this.showStatus(`✅ 网页已成功保存！(${this.formatSize(size)})${imgStats}`, 'success');
             this.showToast(`网页保存成功！大小: ${this.formatSize(size)}`, 'success');
             
-            // 清空输入
             this.urlInput.value = '';
             
         } catch (error) {
@@ -622,6 +609,214 @@ class WebPageSaver {
         } finally {
             this.saveBtn.disabled = false;
             setTimeout(() => this.showProgress(false), 2000);
+        }
+    }
+    
+    // 处理所有类型的图片
+    async processAllImages(doc, baseUrl) {
+        // 1. 处理 <img> 标签
+        await this.processImgTags(doc, baseUrl);
+        
+        // 2. 处理内联样式中的背景图片
+        await this.processInlineStyleImages(doc, baseUrl);
+        
+        // 3. 处理 <picture> 和 <source>
+        await this.processPictureElements(doc, baseUrl);
+        
+        // 4. 处理 <svg> 中的 <image>
+        await this.processSvgImages(doc, baseUrl);
+        
+        // 5. 处理 video poster
+        await this.processVideoPosters(doc, baseUrl);
+        
+        // 6. 处理 input type="image"
+        await this.processInputImages(doc, baseUrl);
+        
+        console.log(`图片处理完成: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed} 成功`);
+    }
+    
+    async processImgTags(doc, baseUrl) {
+        const images = doc.querySelectorAll('img');
+        
+        for (const img of images) {
+            // 获取图片源（支持多种懒加载属性）
+            let src = img.getAttribute('src');
+            const dataSrc = img.getAttribute('data-src') || 
+                          img.getAttribute('data-original') ||
+                          img.getAttribute('data-lazy-src') ||
+                          img.getAttribute('data-lazyload') ||
+                          img.getAttribute('data-image');
+            
+            // 如果有 data-src 且 src 是占位符，使用 data-src
+            if (dataSrc && (!src || src.includes('data:image') || src.includes('placeholder') || src.includes('loading'))) {
+                src = dataSrc;
+            }
+            
+            if (!src || src.startsWith('data:')) {
+                // 尝试其他属性
+                const otherSrc = img.getAttribute('data-srcset') || 
+                               img.getAttribute('data-lazy-srcset');
+                if (otherSrc) {
+                    src = otherSrc.split(/\s+/)[0];
+                }
+            }
+            
+            if (!src || src.startsWith('data:')) continue;
+            
+            this.stats.imagesProcessed++;
+            
+            const absoluteUrl = this.resolveUrl(baseUrl, src);
+            const base64 = await this.fetchAsBase64(absoluteUrl);
+            
+            if (base64) {
+                img.setAttribute('src', base64);
+                // 清除懒加载属性
+                img.removeAttribute('data-src');
+                img.removeAttribute('data-original');
+                img.removeAttribute('data-lazy-src');
+                img.removeAttribute('data-lazyload');
+                img.removeAttribute('loading');
+                this.stats.imagesSuccess++;
+            } else {
+                this.stats.imagesFailed++;
+            }
+        }
+        
+        // 处理 srcset
+        for (const img of doc.querySelectorAll('img[srcset]')) {
+            const srcset = img.getAttribute('srcset');
+            const newSrcset = await this.processSrcset(srcset, baseUrl);
+            if (newSrcset) {
+                img.setAttribute('srcset', newSrcset);
+            }
+        }
+    }
+    
+    async processInlineStyleImages(doc, baseUrl) {
+        // 处理所有带 style 属性的元素
+        const elementsWithStyle = doc.querySelectorAll('[style*="background"], [style*="url("]');
+        
+        for (const el of elementsWithStyle) {
+            let style = el.getAttribute('style');
+            if (!style) continue;
+            
+            // 匹配 url() 中的图片
+            const urlMatches = style.match(/url\(\s*['"]?([^'"\)\s]+)['"]?\s*\)/gi);
+            if (!urlMatches) continue;
+            
+            for (const match of urlMatches) {
+                const urlMatch = match.match(/url\(\s*['"]?([^'"\)\s]+)['"]?\s*\)/i);
+                if (!urlMatch) continue;
+                
+                const imgUrl = urlMatch[1];
+                if (imgUrl.startsWith('data:')) continue;
+                
+                if (this.isImageUrl(imgUrl)) {
+                    this.stats.imagesProcessed++;
+                    const absoluteUrl = this.resolveUrl(baseUrl, imgUrl);
+                    const base64 = await this.fetchAsBase64(absoluteUrl);
+                    
+                    if (base64) {
+                        style = style.replace(match, `url(${base64})`);
+                        this.stats.imagesSuccess++;
+                    } else {
+                        this.stats.imagesFailed++;
+                    }
+                }
+            }
+            
+            el.setAttribute('style', style);
+        }
+    }
+    
+    async processPictureElements(doc, baseUrl) {
+        const sources = doc.querySelectorAll('source[srcset], source[src]');
+        
+        for (const source of sources) {
+            // 处理 srcset
+            const srcset = source.getAttribute('srcset');
+            if (srcset) {
+                const newSrcset = await this.processSrcset(srcset, baseUrl);
+                if (newSrcset) {
+                    source.setAttribute('srcset', newSrcset);
+                }
+            }
+            
+            // 处理 src
+            const src = source.getAttribute('src');
+            if (src && !src.startsWith('data:')) {
+                this.stats.imagesProcessed++;
+                const absoluteUrl = this.resolveUrl(baseUrl, src);
+                const base64 = await this.fetchAsBase64(absoluteUrl);
+                if (base64) {
+                    source.setAttribute('src', base64);
+                    this.stats.imagesSuccess++;
+                } else {
+                    this.stats.imagesFailed++;
+                }
+            }
+        }
+    }
+    
+    async processSvgImages(doc, baseUrl) {
+        const svgImages = doc.querySelectorAll('svg image[href], svg image[xlink\\:href]');
+        
+        for (const img of svgImages) {
+            const href = img.getAttribute('href') || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+            if (!href || href.startsWith('data:')) continue;
+            
+            if (this.isImageUrl(href)) {
+                this.stats.imagesProcessed++;
+                const absoluteUrl = this.resolveUrl(baseUrl, href);
+                const base64 = await this.fetchAsBase64(absoluteUrl);
+                
+                if (base64) {
+                    img.setAttribute('href', base64);
+                    this.stats.imagesSuccess++;
+                } else {
+                    this.stats.imagesFailed++;
+                }
+            }
+        }
+    }
+    
+    async processVideoPosters(doc, baseUrl) {
+        const videos = doc.querySelectorAll('video[poster]');
+        
+        for (const video of videos) {
+            const poster = video.getAttribute('poster');
+            if (!poster || poster.startsWith('data:')) continue;
+            
+            this.stats.imagesProcessed++;
+            const absoluteUrl = this.resolveUrl(baseUrl, poster);
+            const base64 = await this.fetchAsBase64(absoluteUrl);
+            
+            if (base64) {
+                video.setAttribute('poster', base64);
+                this.stats.imagesSuccess++;
+            } else {
+                this.stats.imagesFailed++;
+            }
+        }
+    }
+    
+    async processInputImages(doc, baseUrl) {
+        const inputs = doc.querySelectorAll('input[type="image"][src]');
+        
+        for (const input of inputs) {
+            const src = input.getAttribute('src');
+            if (!src || src.startsWith('data:')) continue;
+            
+            this.stats.imagesProcessed++;
+            const absoluteUrl = this.resolveUrl(baseUrl, src);
+            const base64 = await this.fetchAsBase64(absoluteUrl);
+            
+            if (base64) {
+                input.setAttribute('src', base64);
+                this.stats.imagesSuccess++;
+            } else {
+                this.stats.imagesFailed++;
+            }
         }
     }
     
@@ -637,30 +832,20 @@ class WebPageSaver {
                 const response = await this.fetchWithProxy(absoluteUrl);
                 const css = await response.text();
                 
-                // 处理 CSS 中的 url()
-                let processedCss = css;
-                if (options.inlineImages || options.inlineFonts) {
-                    processedCss = await this.processCSSUrls(processedCss, absoluteUrl, options);
-                }
-                
-                // 创建 style 标签替换 link
                 const style = doc.createElement('style');
-                style.textContent = processedCss;
+                style.textContent = css;
                 link.replaceWith(style);
             } catch (error) {
                 console.warn('Failed to process stylesheet:', error);
             }
         }
         
-        // 处理内联 <style> 中的 @import 和 url()
+        // 处理内联 <style>
         const styles = doc.querySelectorAll('style');
         for (const style of styles) {
             let css = style.textContent;
-            
-            // 处理 @import
             css = await this.processCSSImports(css, baseUrl);
             
-            // 处理 url() 中的资源
             if (options.inlineFonts || options.inlineImages) {
                 css = await this.processCSSUrls(css, baseUrl, options);
             }
@@ -671,7 +856,7 @@ class WebPageSaver {
     
     async processCSSImports(css, baseUrl) {
         const importRegex = /@import\s+(?:url\()?['"]?([^'"\)]+)['"]?\)?;/g;
-        const imports = [...css.matchAll(importRegex)];
+        const imports = css.matchAll(importRegex);
         
         for (const match of imports) {
             const importUrl = match[1];
@@ -679,11 +864,7 @@ class WebPageSaver {
             
             try {
                 const response = await this.fetchWithProxy(absoluteUrl);
-                let importedCss = await response.text();
-                
-                // 递归处理导入的 CSS 中的 url()
-                importedCss = await this.processCSSUrls(importedCss, absoluteUrl, { inlineImages: true, inlineFonts: true });
-                
+                const importedCss = await response.text();
                 css = css.replace(match[0], `/* @import from ${importUrl} */\n${importedCss}`);
             } catch (error) {
                 console.warn('Failed to import CSS:', importUrl);
@@ -693,38 +874,35 @@ class WebPageSaver {
         return css;
     }
     
-    async processCSSUrls(css, cssBaseUrl, options) {
-        // 匹配 url() 中的各种格式
-        const urlRegex = /url\(\s*(['"]?)([^'"\)\s]+)\1\s*\)/g;
+    async processCSSUrls(css, baseUrl, options) {
+        const urlRegex = /url\(\s*['"]?([^'"\)\s]+)['"]?\s*\)/gi;
         const replacements = [];
-        const matches = [...css.matchAll(urlRegex)];
         
-        for (const match of matches) {
-            const fullMatch = match[0];
-            const resourceUrl = match[2];
-            
-            // 跳过 data URI
+        for (const match of css.matchAll(urlRegex)) {
+            const resourceUrl = match[1];
             if (resourceUrl.startsWith('data:')) continue;
             
-            const absoluteUrl = this.resolveUrl(cssBaseUrl, resourceUrl);
+            const absoluteUrl = this.resolveUrl(baseUrl, resourceUrl);
             
-            // 判断是否需要处理
-            const isFont = this.isFontUrl(resourceUrl);
+            const isFont = /\.(woff2?|ttf|otf|eot)(\?|$)/i.test(resourceUrl);
             const isImage = this.isImageUrl(resourceUrl);
-            const isOtherResource = !isFont && !isImage && options.inlineImages;
             
-            if ((isFont && options.inlineFonts) || (isImage && options.inlineImages) || isOtherResource) {
+            if ((isFont && options.inlineFonts) || (isImage && options.inlineImages)) {
+                if (isImage) this.stats.imagesProcessed++;
+                
                 const base64 = await this.fetchAsBase64(absoluteUrl);
                 if (base64) {
                     replacements.push({
-                        original: fullMatch,
+                        original: match[0],
                         replacement: `url(${base64})`
                     });
+                    if (isImage) this.stats.imagesSuccess++;
+                } else {
+                    if (isImage) this.stats.imagesFailed++;
                 }
             }
         }
         
-        // 执行替换
         for (const { original, replacement } of replacements) {
             css = css.replace(original, replacement);
         }
@@ -732,174 +910,29 @@ class WebPageSaver {
         return css;
     }
     
-    isFontUrl(url) {
-        return /\.(woff2?|ttf|otf|eot)(\?|$|#)/i.test(url);
-    }
-    
-    isImageUrl(url) {
-        return /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)(\?|$|#)/i.test(url);
-    }
-    
-    async processImages(doc, baseUrl) {
-        // 处理所有图片元素
-        const images = doc.querySelectorAll('img');
-        
-        for (const img of images) {
-            // 处理 src 属性
-            const src = img.getAttribute('src');
-            if (src && !src.startsWith('data:')) {
-                const absoluteUrl = this.resolveUrl(baseUrl, src);
-                const base64 = await this.fetchAsBase64(absoluteUrl);
-                if (base64) {
-                    img.setAttribute('src', base64);
-                    // 移除可能阻止显示的属性
-                    img.removeAttribute('loading');
-                }
-            }
-            
-            // 处理 data-src (懒加载)
-            const dataSrc = img.getAttribute('data-src');
-            if (dataSrc && !dataSrc.startsWith('data:')) {
-                const absoluteUrl = this.resolveUrl(baseUrl, dataSrc);
-                const base64 = await this.fetchAsBase64(absoluteUrl);
-                if (base64) {
-                    img.setAttribute('src', base64);
-                    img.removeAttribute('data-src');
-                    img.removeAttribute('loading');
-                }
-            }
-            
-            // 处理其他 data-* 图片属性
-            const dataAttrs = ['data-original', 'data-lazy-src', 'data-lazy'];
-            for (const attr of dataAttrs) {
-                const value = img.getAttribute(attr);
-                if (value && !value.startsWith('data:')) {
-                    const absoluteUrl = this.resolveUrl(baseUrl, value);
-                    const base64 = await this.fetchAsBase64(absoluteUrl);
-                    if (base64) {
-                        img.setAttribute('src', base64);
-                        img.removeAttribute(attr);
-                    }
-                }
-            }
-            
-            // 处理 srcset
-            if (img.hasAttribute('srcset')) {
-                const srcset = img.getAttribute('srcset');
-                const newSrcset = await this.processSrcset(srcset, baseUrl);
-                if (newSrcset) {
-                    img.setAttribute('srcset', newSrcset);
-                }
-            }
-        }
-        
-        // 处理 picture 元素的 source
-        const sources = doc.querySelectorAll('source');
-        for (const source of sources) {
-            if (source.hasAttribute('srcset')) {
-                const srcset = source.getAttribute('srcset');
-                const newSrcset = await this.processSrcset(srcset, baseUrl);
-                if (newSrcset) {
-                    source.setAttribute('srcset', newSrcset);
-                }
-            }
-        }
-        
-        // 处理 CSS 背景图片（内联样式）
-        const elementsWithBg = doc.querySelectorAll('[style*="background"]');
-        for (const el of elementsWithBg) {
-            const style = el.getAttribute('style');
-            const newStyle = await this.processInlineStyleBackground(style, baseUrl);
-            if (newStyle !== style) {
-                el.setAttribute('style', newStyle);
-            }
-        }
-        
-        // 处理 SVG 中的 image 元素
-        const svgImages = doc.querySelectorAll('svg image[href], svg image[xlink\\:href]');
-        for (const svgImg of svgImages) {
-            const href = svgImg.getAttribute('href') || svgImg.getAttribute('xlink:href');
-            if (href && !href.startsWith('data:')) {
-                const absoluteUrl = this.resolveUrl(baseUrl, href);
-                const base64 = await this.fetchAsBase64(absoluteUrl);
-                if (base64) {
-                    svgImg.setAttribute('href', base64);
-                    if (svgImg.hasAttribute('xlink:href')) {
-                        svgImg.setAttribute('xlink:href', base64);
-                    }
-                }
-            }
-        }
-        
-        // 处理 video poster
-        const videos = doc.querySelectorAll('video[poster]');
-        for (const video of videos) {
-            const poster = video.getAttribute('poster');
-            if (poster && !poster.startsWith('data:')) {
-                const absoluteUrl = this.resolveUrl(baseUrl, poster);
-                const base64 = await this.fetchAsBase64(absoluteUrl);
-                if (base64) {
-                    video.setAttribute('poster', base64);
-                }
-            }
-        }
-        
-        // 处理 input type="image"
-        const imageInputs = doc.querySelectorAll('input[type="image"][src]');
-        for (const input of imageInputs) {
-            const src = input.getAttribute('src');
-            if (src && !src.startsWith('data:')) {
-                const absoluteUrl = this.resolveUrl(baseUrl, src);
-                const base64 = await this.fetchAsBase64(absoluteUrl);
-                if (base64) {
-                    input.setAttribute('src', base64);
-                }
-            }
-        }
-    }
-    
-    async processInlineStyleBackground(style, baseUrl) {
-        // 匹配 background-image 或 background 中的 url()
-        const urlRegex = /url\(\s*(['"]?)([^'"\)\s]+)\1\s*\)/g;
-        const matches = [...style.matchAll(urlRegex)];
-        
-        let newStyle = style;
-        for (const match of matches) {
-            const fullMatch = match[0];
-            const resourceUrl = match[2];
-            
-            if (resourceUrl.startsWith('data:')) continue;
-            
-            const absoluteUrl = this.resolveUrl(baseUrl, resourceUrl);
-            const base64 = await this.fetchAsBase64(absoluteUrl);
-            if (base64) {
-                newStyle = newStyle.replace(fullMatch, `url(${base64})`);
-            }
-        }
-        
-        return newStyle;
-    }
-    
     async processSrcset(srcset, baseUrl) {
-        if (!srcset) return srcset;
+        if (!srcset) return null;
         
         const parts = srcset.split(',').map(p => p.trim());
         const newParts = [];
         
         for (const part of parts) {
-            const [url, ...descriptors] = part.split(/\s+/);
-            if (!url || url.startsWith('data:')) {
+            const [url, descriptor] = part.split(/\s+/);
+            if (url.startsWith('data:')) {
                 newParts.push(part);
                 continue;
             }
             
+            this.stats.imagesProcessed++;
             const absoluteUrl = this.resolveUrl(baseUrl, url);
             const base64 = await this.fetchAsBase64(absoluteUrl);
             
             if (base64) {
-                newParts.push([base64, ...descriptors].join(' '));
+                newParts.push(descriptor ? `${base64} ${descriptor}` : base64);
+                this.stats.imagesSuccess++;
             } else {
                 newParts.push(part);
+                this.stats.imagesFailed++;
             }
         }
         
@@ -909,10 +942,9 @@ class WebPageSaver {
     removeScripts(doc) {
         doc.querySelectorAll('script').forEach(el => el.remove());
         
-        // 移除事件处理器
         const eventAttrs = ['onclick', 'onload', 'onerror', 'onmouseover', 'onmouseout', 
-                           'onmousedown', 'onmouseup', 'onfocus', 'onblur', 'onkeydown', 
-                           'onkeyup', 'onsubmit', 'onchange'];
+                          'onmousedown', 'onmouseup', 'onfocus', 'onblur', 'onchange',
+                          'onsubmit', 'onkeydown', 'onkeyup', 'onkeypress'];
         
         doc.querySelectorAll('[' + eventAttrs.join('],[') + ']').forEach(el => {
             eventAttrs.forEach(attr => el.removeAttribute(attr));
