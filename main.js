@@ -1,7 +1,6 @@
 /**
  * WebPage Saver - 网页保存工具
- * 将任意网页保存为单个HTML文件，支持历史记录、预览和下载
- * 使用 IndexedDB 支持大文件存储（限制 10MB）
+ * 优化版本
  */
 
 class StorageManager {
@@ -13,33 +12,22 @@ class StorageManager {
     }
     
     async init() {
-        // 请求持久化存储（防止浏览器清理数据）
-        if (navigator.storage && navigator.storage.persist) {
-            const isPersisted = await navigator.storage.persist();
-            console.log('持久化存储:', isPersisted ? '已启用' : '未启用');
+        if (navigator.storage?.persist) {
+            await navigator.storage.persist();
         }
         
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.dbVersion);
-            
-            request.onerror = () => {
-                console.error('IndexedDB 打开失败:', request.error);
-                reject(request.error);
-            };
-            
+            request.onerror = () => reject(request.error);
             request.onsuccess = () => {
                 this.db = request.result;
-                console.log('IndexedDB 连接成功');
                 resolve(this.db);
             };
-            
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
                 if (!db.objectStoreNames.contains(this.storeName)) {
                     const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
                     store.createIndex('savedAt', 'savedAt', { unique: false });
-                    store.createIndex('url', 'url', { unique: false });
-                    console.log('IndexedDB 存储已创建');
                 }
             };
         });
@@ -47,24 +35,12 @@ class StorageManager {
     
     async add(item) {
         return new Promise((resolve, reject) => {
-            if (!this.db) {
-                reject(new Error('IndexedDB 未初始化'));
-                return;
-            }
-            
+            if (!this.db) return reject(new Error('DB未初始化'));
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
             const request = store.add(item);
-            
-            request.onsuccess = () => {
-                console.log('记录已保存:', item.id);
-                resolve(request.result);
-            };
-            
-            request.onerror = () => {
-                console.error('保存记录失败:', request.error);
-                reject(request.error);
-            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
         });
     }
     
@@ -90,33 +66,22 @@ class StorageManager {
     
     async getAll() {
         return new Promise((resolve, reject) => {
-            if (!this.db) {
-                console.error('IndexedDB 未初始化');
-                resolve([]);
-                return;
-            }
-            
+            if (!this.db) return resolve([]);
             const transaction = this.db.transaction([this.storeName], 'readonly');
             const store = transaction.objectStore(this.storeName);
             const index = store.index('savedAt');
             const request = index.openCursor(null, 'prev');
             const results = [];
-            
             request.onsuccess = (event) => {
                 const cursor = event.target.result;
                 if (cursor) {
                     results.push(cursor.value);
                     cursor.continue();
                 } else {
-                    console.log('加载历史记录:', results.length, '条');
                     resolve(results);
                 }
             };
-            
-            request.onerror = () => {
-                console.error('读取历史记录失败:', request.error);
-                reject(request.error);
-            };
+            request.onerror = () => reject(request.error);
         });
     }
     
@@ -131,7 +96,7 @@ class StorageManager {
     }
     
     async getStorageInfo() {
-        if (navigator.storage && navigator.storage.estimate) {
+        if (navigator.storage?.estimate) {
             const estimate = await navigator.storage.estimate();
             return { usage: estimate.usage || 0, quota: estimate.quota || 0 };
         }
@@ -165,11 +130,9 @@ class WebPageSaver {
         this.currentPreviewItem = null;
         this.storage = new StorageManager();
         
-        // CORS代理列表（按成功率排序）
         this.corsProxies = [
             'https://api.allorigins.win/raw?url=',
-            'https://corsproxy.io/?',
-            'https://api.codetabs.com/v1/proxy?quest='
+            'https://corsproxy.io/?'
         ];
         
         this.currentProxyIndex = 0;
@@ -183,21 +146,19 @@ class WebPageSaver {
         try {
             await this.storage.init();
         } catch (e) {
-            console.error('IndexedDB 初始化失败:', e);
-            this.showToast('存储初始化失败', 'error');
+            console.error('存储初始化失败:', e);
         }
         
         this.saveBtn.addEventListener('click', () => this.save());
         this.urlInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.save();
         });
-        
         this.searchInput.addEventListener('input', () => this.renderHistory());
         this.clearAllBtn.addEventListener('click', () => this.clearAllHistory());
         
         document.getElementById('closeModal').addEventListener('click', () => this.closePreview());
         document.getElementById('closePreviewBtn').addEventListener('click', () => this.closePreview());
-        document.getElementById('downloadFromPreview').addEventListener('click', () => this.downloadCurrentPreview());
+        document.getElementById('downloadFromPreview').addEventListener('click', () => this.downloadFromPreview());
         
         this.previewModal.addEventListener('click', (e) => {
             if (e.target === this.previewModal) this.closePreview();
@@ -245,7 +206,7 @@ class WebPageSaver {
             await this.renderHistory();
             await this.updateStorageInfo();
         } catch (e) {
-            this.showToast('保存失败: ' + e.message, 'error');
+            console.error('保存历史失败:', e);
         }
     }
     
@@ -279,8 +240,8 @@ class WebPageSaver {
         
         if (searchTerm) {
             history = history.filter(item => 
-                (item.title && item.title.toLowerCase().includes(searchTerm)) ||
-                (item.url && item.url.toLowerCase().includes(searchTerm))
+                (item.title?.toLowerCase().includes(searchTerm)) ||
+                (item.url?.toLowerCase().includes(searchTerm))
             );
         }
         
@@ -354,6 +315,7 @@ class WebPageSaver {
         return div.innerHTML;
     }
     
+    // 预览功能
     async preview(id) {
         try {
             const item = await this.storage.get(id);
@@ -367,7 +329,8 @@ class WebPageSaver {
             this.previewModal.classList.add('active');
             document.body.style.overflow = 'hidden';
         } catch (e) {
-            this.showToast('预览失败', 'error');
+            console.error('预览失败:', e);
+            this.showToast('预览失败: ' + e.message, 'error');
         }
     }
     
@@ -378,8 +341,10 @@ class WebPageSaver {
         this.currentPreviewItem = null;
     }
     
-    async downloadCurrentPreview() {
-        if (this.currentPreviewItem) await this.download(this.currentPreviewItem.id);
+    downloadFromPreview() {
+        if (this.currentPreviewItem) {
+            this.doDownload(this.currentPreviewItem.content, this.currentPreviewItem.filename);
+        }
     }
     
     async download(id) {
@@ -389,42 +354,79 @@ class WebPageSaver {
                 this.showToast('记录不存在', 'error');
                 return;
             }
-            this.downloadHTML(item.content, item.filename);
-            this.showToast('下载已开始', 'success');
+            this.doDownload(item.content, item.filename);
         } catch (e) {
             this.showToast('下载失败: ' + e.message, 'error');
         }
     }
     
+    // 下载函数
+    doDownload(html, filename) {
+        if (!filename.endsWith('.html')) {
+            filename += '.html';
+        }
+        
+        try {
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            
+            this.showToast('下载成功: ' + filename, 'success');
+        } catch (e) {
+            console.error('下载失败:', e);
+            const win = window.open('', '_blank');
+            if (win) {
+                win.document.write(html);
+                win.document.close();
+                this.showToast('请按 Ctrl+S 保存', 'info');
+            }
+        }
+    }
+    
+    // 代理请求
     async fetchWithProxy(url) {
-        let lastError;
         for (let i = 0; i < this.corsProxies.length; i++) {
-            const proxyIndex = (this.currentProxyIndex + i) % this.corsProxies.length;
-            const proxy = this.corsProxies[proxyIndex];
+            const proxy = this.corsProxies[(this.currentProxyIndex + i) % this.corsProxies.length];
             try {
-                const response = await fetch(proxy + encodeURIComponent(url));
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
+                const response = await fetch(proxy + encodeURIComponent(url), {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                
                 if (response.ok) {
-                    this.currentProxyIndex = proxyIndex;
+                    this.currentProxyIndex = (this.currentProxyIndex + i) % this.corsProxies.length;
                     return response;
                 }
             } catch (error) {
-                lastError = error;
+                continue;
             }
         }
-        throw new Error(`所有代理失败: ${lastError?.message}`);
+        throw new Error('所有代理都失败了');
     }
     
+    // 图片下载 - 3秒超时快速失败
     async fetchAsBase64(url) {
         if (this.resourceCache.has(url)) return this.resourceCache.get(url);
         
-        let lastError;
         for (let i = 0; i < this.corsProxies.length; i++) {
-            const proxyIndex = (this.currentProxyIndex + i) % this.corsProxies.length;
-            const proxy = this.corsProxies[proxyIndex];
+            const proxy = this.corsProxies[(this.currentProxyIndex + i) % this.corsProxies.length];
             
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000); // 减少到 5 秒超时
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
                 
                 const response = await fetch(proxy + encodeURIComponent(url), {
                     signal: controller.signal
@@ -446,16 +448,13 @@ class WebPageSaver {
                 });
                 
                 this.resourceCache.set(url, base64);
-                this.currentProxyIndex = proxyIndex;
                 return base64;
                 
             } catch (error) {
-                lastError = error;
                 continue;
             }
         }
         
-        console.warn('图片下载失败:', url, lastError?.message);
         return null;
     }
     
@@ -518,18 +517,24 @@ class WebPageSaver {
             const baseTag = doc.querySelector('base[href]');
             if (baseTag) baseUrl = this.resolveUrl(url, baseTag.getAttribute('href'));
             
+            // 并行处理CSS和图片
+            const tasks = [];
+            
             if (options.inlineCSS) {
-                this.updateProgress(30, '正在处理CSS...');
-                await this.processStyles(doc, baseUrl, options);
+                tasks.push(this.processStyles(doc, baseUrl, options));
             }
             
             if (options.inlineImages) {
-                this.updateProgress(50, '正在处理图片...');
-                await this.processAllImages(doc, baseUrl);
+                tasks.push(this.processAllImages(doc, baseUrl));
+            }
+            
+            if (tasks.length > 0) {
+                this.updateProgress(30, '正在处理资源...');
+                await Promise.all(tasks);
             }
             
             if (options.removeScripts) {
-                this.updateProgress(80, '正在移除脚本...');
+                this.updateProgress(85, '正在移除脚本...');
                 this.removeScripts(doc);
             }
             
@@ -553,12 +558,11 @@ class WebPageSaver {
             });
             
             this.updateProgress(100, '完成！');
-            this.downloadHTML(finalHtml, filename);
+            this.doDownload(finalHtml, filename);
             
             const imgInfo = this.stats.imagesProcessed > 0 
                 ? ` (图片: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed})` : '';
             this.showStatus(`✅ 保存成功！(${this.formatSize(size)})${imgInfo}`, 'success');
-            this.showToast('保存成功！', 'success');
             
             this.urlInput.value = '';
             
@@ -572,79 +576,63 @@ class WebPageSaver {
         }
     }
     
+    // 并行处理图片
     async processAllImages(doc, baseUrl) {
-        // 1. 收集所有需要处理的图片
         const images = Array.from(doc.querySelectorAll('img'));
         const total = images.length;
         
         if (total === 0) return;
         
-        this.updateProgress(50, `发现 ${total} 张图片，开始处理...`);
+        this.updateProgress(40, `发现 ${total} 张图片...`);
         
-        // 2. 并行处理图片（每次最多 5 个并发）
-        const batchSize = 5;
-        let processed = 0;
+        // 10个并发
+        const batchSize = 10;
         
         for (let i = 0; i < images.length; i += batchSize) {
             const batch = images.slice(i, i + batchSize);
+            await Promise.all(batch.map(img => this.processSingleImage(img, baseUrl)));
             
-            // 并行处理当前批次
-            await Promise.all(batch.map(async (img) => {
-                await this.processSingleImage(img, baseUrl);
-            }));
-            
-            processed += batch.length;
-            this.updateProgress(50 + (processed / total) * 25, `处理图片 ${processed}/${total}...`);
+            const processed = Math.min(i + batchSize, total);
+            this.updateProgress(40 + (processed / total) * 40, `处理图片 ${processed}/${total}...`);
         }
         
-        // 3. 处理内联样式背景图（并行）
+        // 背景图
         const styleElements = Array.from(doc.querySelectorAll('[style*="url("]'));
         await Promise.all(styleElements.map(el => this.processInlineStyleImage(el, baseUrl)));
         
-        // 4. 处理 <picture> 和 <source>
+        // picture 元素
         await this.processPictureElements(doc, baseUrl);
-        
-        console.log(`图片处理完成: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed}`);
     }
     
     async processSingleImage(img, baseUrl) {
-        // 收集所有可能的图片源
-        const sources = [];
-        
-        // 1. data-src 等懒加载属性（优先）
         const lazyAttrs = ['data-src', 'data-original', 'data-lazy-src', 'data-lazyload', 
                           'data-image', 'data-srcset', 'data-nimg'];
+        
+        const sources = [];
+        
         for (const attr of lazyAttrs) {
             const val = img.getAttribute(attr);
             if (val && !val.startsWith('data:')) {
-                const url = val.split(/[\s,]+/)[0];
-                sources.push({ url, priority: 1 });
+                sources.push(val.split(/[\s,]+/)[0]);
             }
         }
         
-        // 2. src 属性
         const src = img.getAttribute('src');
         if (src && !src.startsWith('data:')) {
-            sources.push({ url: src, priority: 2 });
+            sources.push(src);
         }
         
-        // 3. srcset 属性
         const srcset = img.getAttribute('srcset');
         if (srcset) {
             const url = srcset.split(',')[0].trim().split(/\s+/)[0];
             if (url && !url.startsWith('data:')) {
-                sources.push({ url, priority: 1 });
+                sources.unshift(url);
             }
         }
         
-        // 按优先级排序
-        sources.sort((a, b) => a.priority - b.priority);
-        
-        // 尝试下载图片
-        for (const { url } of sources) {
+        for (const url of sources) {
             let finalUrl = url;
             
-            // 处理 Next.js 图片 URL
             if (finalUrl.includes('/_next/image')) {
                 const match = finalUrl.match(/[?&]url=([^&]+)/);
                 if (match) {
@@ -659,20 +647,15 @@ class WebPageSaver {
             
             if (base64) {
                 img.setAttribute('src', base64);
-                // 清除所有懒加载属性
                 lazyAttrs.forEach(attr => img.removeAttribute(attr));
                 img.removeAttribute('srcset');
                 img.removeAttribute('loading');
                 this.stats.imagesSuccess++;
-                return; // 成功则退出
+                return;
             } else {
                 this.stats.imagesFailed++;
-                
-                // 对于无法下载的图片，尝试使用绝对 URL
                 if (absoluteUrl.startsWith('http')) {
                     img.setAttribute('src', absoluteUrl);
-                    lazyAttrs.forEach(attr => img.removeAttribute(attr));
-                    // 设置 crossorigin 属性允许加载外部图片
                     img.setAttribute('crossorigin', 'anonymous');
                 }
             }
@@ -732,7 +715,6 @@ class WebPageSaver {
     }
     
     async processStyles(doc, baseUrl, options) {
-        // 处理外部样式表
         const links = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'));
         
         await Promise.all(links.map(async (link) => {
@@ -744,7 +726,6 @@ class WebPageSaver {
                 const response = await this.fetchWithProxy(absoluteUrl);
                 let css = await response.text();
                 
-                // 处理 CSS 中的图片
                 if (options.inlineImages) {
                     css = await this.processCSSUrls(css, absoluteUrl);
                 }
@@ -757,7 +738,6 @@ class WebPageSaver {
             }
         }));
         
-        // 处理内联样式
         const styles = Array.from(doc.querySelectorAll('style'));
         await Promise.all(styles.map(async (style) => {
             let css = style.textContent;
@@ -854,54 +834,6 @@ class WebPageSaver {
             return `${urlObj.hostname.replace(/\./g, '_')}_${new Date().toISOString().slice(0, 10)}.html`;
         } catch {
             return `saved_page_${Date.now()}.html`;
-        }
-    }
-    
-    downloadHTML(html, filename) {
-        // 确保 filename 以 .html 结尾
-        if (!filename.endsWith('.html')) {
-            filename += '.html';
-        }
-        
-        console.log('开始下载:', filename, '大小:', (html.length / 1024).toFixed(1), 'KB');
-        
-        try {
-            // 方法1: 使用 Blob + URL.createObjectURL
-            const blob = new Blob([html], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.rel = 'noopener';
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            
-            // 延迟释放
-            setTimeout(() => {
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                console.log('下载完成:', filename);
-            }, 100);
-            
-            this.showToast('下载已开始: ' + filename, 'success');
-            
-        } catch (e) {
-            console.error('下载失败:', e);
-            this.showToast('下载失败: ' + e.message, 'error');
-            
-            // 方法2: 打开新窗口让用户手动保存
-            try {
-                const win = window.open('', '_blank');
-                if (win) {
-                    win.document.write('<!DOCTYPE html>' + html);
-                    win.document.close();
-                    this.showToast('请使用 Ctrl+S 保存页面', 'info');
-                }
-            } catch (e2) {
-                console.error('备用下载也失败:', e2);
-            }
         }
     }
 }
