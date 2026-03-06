@@ -424,7 +424,7 @@ class WebPageSaver {
             
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 减少到 5 秒超时
                 
                 const response = await fetch(proxy + encodeURIComponent(url), {
                     signal: controller.signal
@@ -573,24 +573,35 @@ class WebPageSaver {
     }
     
     async processAllImages(doc, baseUrl) {
-        // 1. 处理所有 <img> 标签
-        const images = doc.querySelectorAll('img');
+        // 1. 收集所有需要处理的图片
+        const images = Array.from(doc.querySelectorAll('img'));
         const total = images.length;
+        
+        if (total === 0) return;
+        
+        this.updateProgress(50, `发现 ${total} 张图片，开始处理...`);
+        
+        // 2. 并行处理图片（每次最多 5 个并发）
+        const batchSize = 5;
         let processed = 0;
         
-        for (const img of images) {
-            processed++;
-            if (processed % 5 === 0) {
-                this.updateProgress(50 + (processed / total) * 25, `处理图片 ${processed}/${total}...`);
-            }
+        for (let i = 0; i < images.length; i += batchSize) {
+            const batch = images.slice(i, i + batchSize);
             
-            await this.processSingleImage(img, baseUrl);
+            // 并行处理当前批次
+            await Promise.all(batch.map(async (img) => {
+                await this.processSingleImage(img, baseUrl);
+            }));
+            
+            processed += batch.length;
+            this.updateProgress(50 + (processed / total) * 25, `处理图片 ${processed}/${total}...`);
         }
         
-        // 2. 处理内联样式背景图
-        await this.processInlineStyleImages(doc, baseUrl);
+        // 3. 处理内联样式背景图（并行）
+        const styleElements = Array.from(doc.querySelectorAll('[style*="url("]'));
+        await Promise.all(styleElements.map(el => this.processInlineStyleImage(el, baseUrl)));
         
-        // 3. 处理 <picture> 和 <source>
+        // 4. 处理 <picture> 和 <source>
         await this.processPictureElements(doc, baseUrl);
         
         console.log(`图片处理完成: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed}`);
@@ -661,41 +672,42 @@ class WebPageSaver {
         }
     }
     
-    async processInlineStyleImages(doc, baseUrl) {
-        const elements = doc.querySelectorAll('[style*="url("]');
+    async processInlineStyleImage(el, baseUrl) {
+        let style = el.getAttribute('style');
+        if (!style) return;
         
-        for (const el of elements) {
-            let style = el.getAttribute('style');
-            if (!style) continue;
+        const matches = [...style.matchAll(/url\(\s*['"]?([^'"\)\s]+)['"]?\s*\)/gi)];
+        
+        for (const match of matches) {
+            const url = match[1];
+            if (url.startsWith('data:')) continue;
             
-            const matches = style.matchAll(/url\(\s*['"]?([^'"\)\s]+)['"]?\s*\)/gi);
-            
-            for (const match of matches) {
-                const url = match[1];
-                if (url.startsWith('data:')) continue;
+            if (this.isImageUrl(url)) {
+                this.stats.imagesProcessed++;
+                const absoluteUrl = this.resolveUrl(baseUrl, url);
+                const base64 = await this.fetchAsBase64(absoluteUrl);
                 
-                if (this.isImageUrl(url)) {
-                    this.stats.imagesProcessed++;
-                    const absoluteUrl = this.resolveUrl(baseUrl, url);
-                    const base64 = await this.fetchAsBase64(absoluteUrl);
-                    
-                    if (base64) {
-                        style = style.replace(match[0], `url(${base64})`);
-                        this.stats.imagesSuccess++;
-                    } else {
-                        this.stats.imagesFailed++;
-                    }
+                if (base64) {
+                    style = style.replace(match[0], `url(${base64})`);
+                    this.stats.imagesSuccess++;
+                } else {
+                    this.stats.imagesFailed++;
                 }
             }
-            
-            el.setAttribute('style', style);
         }
+        
+        el.setAttribute('style', style);
+    }
+    
+    async processInlineStyleImages(doc, baseUrl) {
+        const elements = Array.from(doc.querySelectorAll('[style*="url("]'));
+        await Promise.all(elements.map(el => this.processInlineStyleImage(el, baseUrl)));
     }
     
     async processPictureElements(doc, baseUrl) {
-        const sources = doc.querySelectorAll('source[srcset], source[src]');
+        const sources = Array.from(doc.querySelectorAll('source[srcset], source[src]'));
         
-        for (const source of sources) {
+        await Promise.all(sources.map(async (source) => {
             const srcset = source.getAttribute('srcset');
             if (srcset) {
                 const newSrcset = await this.processSrcset(srcset, baseUrl);
@@ -714,16 +726,17 @@ class WebPageSaver {
                     this.stats.imagesFailed++;
                 }
             }
-        }
+        }));
     }
     
     async processStyles(doc, baseUrl, options) {
         // 处理外部样式表
-        const links = doc.querySelectorAll('link[rel="stylesheet"]');
-        for (const link of links) {
+        const links = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'));
+        
+        await Promise.all(links.map(async (link) => {
             try {
                 const href = link.getAttribute('href');
-                if (!href) continue;
+                if (!href) return;
                 
                 const absoluteUrl = this.resolveUrl(baseUrl, href);
                 const response = await this.fetchWithProxy(absoluteUrl);
@@ -740,17 +753,17 @@ class WebPageSaver {
             } catch (e) {
                 console.warn('CSS 处理失败:', e);
             }
-        }
+        }));
         
         // 处理内联样式
-        const styles = doc.querySelectorAll('style');
-        for (const style of styles) {
+        const styles = Array.from(doc.querySelectorAll('style'));
+        await Promise.all(styles.map(async (style) => {
             let css = style.textContent;
             if (options.inlineImages) {
                 css = await this.processCSSUrls(css, baseUrl);
             }
             style.textContent = css;
-        }
+        }));
     }
     
     async processCSSUrls(css, baseUrl) {
