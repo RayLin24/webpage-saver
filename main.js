@@ -404,11 +404,16 @@ class WebPageSaver {
                 return;
             }
             
+            console.log('开始下载:', item.filename, '大小:', item.size);
+            this.showStatus('正在下载...', 'info');
+            
             this.downloadHTML(item.content, item.filename);
             this.showToast('下载已开始', 'success');
+            this.showStatus('✅ 下载已触发，请检查浏览器下载列表', 'success');
         } catch (e) {
             console.error('Download failed:', e);
-            this.showToast('下载失败', 'error');
+            this.showToast('下载失败: ' + e.message, 'error');
+            this.showStatus('❌ 下载失败: ' + e.message, 'error');
         }
     }
     
@@ -983,17 +988,47 @@ class WebPageSaver {
     }
     
     downloadHTML(html, filename) {
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        URL.revokeObjectURL(url);
+        try {
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            
+            // 方案1: 使用 <a> 标签下载
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            
+            // 触发点击
+            a.click();
+            
+            // 延迟释放 URL 和移除元素
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 1000);
+            
+            console.log('下载已触发:', filename);
+        } catch (error) {
+            console.error('下载失败:', error);
+            
+            // 方案2: 使用 navigator.share（移动端）
+            if (navigator.share) {
+                const file = new File([html], filename, { type: 'text/html' });
+                navigator.share({
+                    files: [file],
+                    title: filename
+                }).catch(console.error);
+            } else {
+                // 方案3: 打开新窗口显示内容
+                const newWindow = window.open('', '_blank');
+                if (newWindow) {
+                    newWindow.document.write(html);
+                    newWindow.document.close();
+                    this.showToast('请使用 Ctrl+S 保存页面', 'info');
+                }
+            }
+        }
     }
 }
 
