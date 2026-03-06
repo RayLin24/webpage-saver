@@ -1,111 +1,222 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>功能测试</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>功能测试 - WebPage Saver</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-item {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .test-item.pass { background: #d4edda; border-color: #c3e6cb; }
+        .test-item.fail { background: #f8d7da; border-color: #f5c6cb; }
+        .test-item.pending { background: #fff3cd; border-color: #ffeeba; }
+        .test-item h3 { margin: 0 0 10px 0; font-size: 14px; }
+        .test-item pre { 
+            background: #f5f5f5; 
+            padding: 10px; 
+            border-radius: 4px; 
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .summary {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .summary h2 { margin: 0; }
+    </style>
 </head>
 <body>
-    <h1>WebPage Saver 功能测试</h1>
-    <div id="results"></div>
-    
+    <h1>🧪 WebPage Saver 功能测试</h1>
+    <div id="tests"></div>
+    <div class="summary" id="summary">
+        <h2>运行中...</h2>
+    </div>
+
+    <script src="main.js"></script>
     <script>
-        const results = document.getElementById('results');
+        const tests = document.getElementById('tests');
+        const summary = document.getElementById('summary');
+        let passed = 0;
+        let failed = 0;
         
-        function log(msg, type = 'info') {
+        function log(name, status, detail = '') {
             const div = document.createElement('div');
-            div.style.padding = '10px';
-            div.style.margin = '5px';
-            div.style.borderRadius = '5px';
-            div.style.background = type === 'pass' ? '#d4edda' : type === 'fail' ? '#f8d7da' : '#e2e3e5';
-            div.innerHTML = msg;
-            results.appendChild(div);
+            div.className = `test-item ${status}`;
+            div.innerHTML = `<h3>${status === 'pass' ? '✅' : status === 'fail' ? '❌' : '⏳'} ${name}</h3>`;
+            if (detail) {
+                div.innerHTML += `<pre>${detail}</pre>`;
+            }
+            tests.appendChild(div);
+            
+            if (status === 'pass') passed++;
+            if (status === 'fail') failed++;
         }
         
         async function runTests() {
-            log('开始测试...');
-            
-            // 测试1: 检查全局变量
+            // 测试 1: StorageManager 类存在
             try {
                 if (typeof StorageManager !== 'undefined') {
-                    log('✅ StorageManager 类已定义', 'pass');
+                    log('StorageManager 类定义', 'pass');
                 } else {
-                    log('❌ StorageManager 类未定义', 'fail');
+                    log('StorageManager 类定义', 'fail', '类未定义');
                 }
             } catch (e) {
-                log('❌ StorageManager 检查失败: ' + e.message, 'fail');
+                log('StorageManager 类定义', 'fail', e.message);
             }
             
-            // 测试2: 检查 IndexedDB 支持
+            // 测试 2: WebPageSaver 类存在
             try {
-                if (window.indexedDB) {
-                    log('✅ IndexedDB 支持', 'pass');
+                if (typeof WebPageSaver !== 'undefined') {
+                    log('WebPageSaver 类定义', 'pass');
                 } else {
-                    log('❌ IndexedDB 不支持', 'fail');
+                    log('WebPageSaver 类定义', 'fail', '类未定义');
                 }
             } catch (e) {
-                log('❌ IndexedDB 检查失败: ' + e.message, 'fail');
+                log('WebPageSaver 类定义', 'fail', e.message);
             }
             
-            // 测试3: 初始化 StorageManager
+            // 测试 3: IndexedDB 初始化
             try {
                 const storage = new StorageManager();
                 await storage.init();
-                log('✅ StorageManager 初始化成功', 'pass');
+                log('IndexedDB 初始化', 'pass');
                 
-                // 测试4: 添加数据
-                const testItem = {
+                // 测试 4: 写入数据
+                const testData = {
                     id: 'test_' + Date.now(),
-                    url: 'https://test.com',
+                    url: 'https://test.example.com',
                     title: '测试页面',
-                    content: '<html><body>测试</body></html>',
+                    filename: 'test.html',
+                    content: '<html><body><h1>测试内容</h1></body></html>',
                     savedAt: new Date().toISOString(),
-                    size: 100
+                    size: 1000
                 };
                 
-                await storage.add(testItem);
-                log('✅ 添加数据成功', 'pass');
+                await storage.add(testData);
+                log('IndexedDB 写入', 'pass');
                 
-                // 测试5: 读取数据
+                // 测试 5: 读取数据
+                const item = await storage.get(testData.id);
+                if (item && item.content === testData.content) {
+                    log('IndexedDB 读取', 'pass', `标题: ${item.title}`);
+                } else {
+                    log('IndexedDB 读取', 'fail', '数据不匹配');
+                }
+                
+                // 测试 6: 获取所有数据
                 const all = await storage.getAll();
-                if (all.length > 0) {
-                    log('✅ 读取数据成功，共 ' + all.length + ' 条', 'pass');
+                if (Array.isArray(all) && all.length > 0) {
+                    log('IndexedDB 获取全部', 'pass', `共 ${all.length} 条记录`);
                 } else {
-                    log('❌ 读取数据为空', 'fail');
+                    log('IndexedDB 获取全部', 'fail', '无数据');
                 }
                 
-                // 测试6: 删除测试数据
-                await storage.delete(testItem.id);
-                log('✅ 删除数据成功', 'pass');
+                // 测试 7: 删除数据
+                await storage.delete(testData.id);
+                const deleted = await storage.get(testData.id);
+                if (!deleted) {
+                    log('IndexedDB 删除', 'pass');
+                } else {
+                    log('IndexedDB 删除', 'fail', '数据仍存在');
+                }
                 
             } catch (e) {
-                log('❌ StorageManager 测试失败: ' + e.message, 'fail');
+                log('IndexedDB 操作', 'fail', e.message + '\n' + e.stack);
             }
             
-            // 测试7: 检查下载函数
+            // 测试 8: WebPageSaver 方法存在
             try {
-                if (typeof WebPageSaver !== 'undefined') {
-                    const app = new WebPageSaver();
-                    if (typeof app.downloadHTML === 'function') {
-                        log('✅ downloadHTML 函数存在', 'pass');
-                    } else {
-                        log('❌ downloadHTML 函数不存在', 'fail');
+                const methods = [
+                    'save', 'preview', 'download', 'downloadHTML',
+                    'processSingleImage', 'fetchAsBase64', 'resolveUrl'
+                ];
+                const app = new WebPageSaver();
+                let missing = [];
+                
+                for (const method of methods) {
+                    if (typeof app[method] !== 'function') {
+                        missing.push(method);
                     }
+                }
+                
+                if (missing.length === 0) {
+                    log('WebPageSaver 方法检查', 'pass', methods.join(', '));
                 } else {
-                    log('⚠️ WebPageSaver 类未定义（需要 main.js）', 'info');
+                    log('WebPageSaver 方法检查', 'fail', '缺失: ' + missing.join(', '));
                 }
             } catch (e) {
-                log('❌ 下载函数检查失败: ' + e.message, 'fail');
+                log('WebPageSaver 方法检查', 'fail', e.message);
             }
             
-            log('测试完成！');
+            // 测试 9: resolveUrl 函数
+            try {
+                const app = new WebPageSaver();
+                const tests = [
+                    { base: 'https://example.com', rel: '/image.png', expected: 'https://example.com/image.png' },
+                    { base: 'https://example.com/page/', rel: 'image.png', expected: 'https://example.com/page/image.png' },
+                    { base: 'https://example.com', rel: '//cdn.com/img.png', expected: 'https://cdn.com/img.png' },
+                ];
+                
+                let allPass = true;
+                let details = [];
+                
+                for (const t of tests) {
+                    const result = app.resolveUrl(t.base, t.rel);
+                    if (result === t.expected) {
+                        details.push(`✓ ${t.rel} → ${result}`);
+                    } else {
+                        details.push(`✗ ${t.rel} → ${result} (期望: ${t.expected})`);
+                        allPass = false;
+                    }
+                }
+                
+                if (allPass) {
+                    log('resolveUrl 函数', 'pass', details.join('\n'));
+                } else {
+                    log('resolveUrl 函数', 'fail', details.join('\n'));
+                }
+            } catch (e) {
+                log('resolveUrl 函数', 'fail', e.message);
+            }
+            
+            // 测试 10: 下载函数（模拟）
+            try {
+                const app = new WebPageSaver();
+                const testHtml = '<!DOCTYPE html><html><body>测试下载</body></html>';
+                
+                // 检查函数是否可调用
+                if (typeof app.downloadHTML === 'function') {
+                    log('downloadHTML 函数', 'pass', '函数存在且可调用');
+                } else {
+                    log('downloadHTML 函数', 'fail', '函数不存在');
+                }
+            } catch (e) {
+                log('downloadHTML 函数', 'fail', e.message);
+            }
+            
+            // 总结
+            summary.innerHTML = `
+                <h2>测试完成</h2>
+                <p>✅ 通过: ${passed} | ❌ 失败: ${failed}</p>
+                <p style="font-size: 12px; color: #666;">${failed === 0 ? '所有测试通过！' : '请检查失败的测试项'}</p>
+            `;
         }
         
-        // 加载 main.js 后运行测试
-        const script = document.createElement('script');
-        script.src = 'main.js';
-        script.onload = runTests;
-        script.onerror = () => log('❌ 无法加载 main.js', 'fail');
-        document.body.appendChild(script);
+        // 等待 main.js 加载完成后运行测试
+        setTimeout(runTests, 500);
     </script>
 </body>
 </html>
