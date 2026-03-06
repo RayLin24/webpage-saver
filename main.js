@@ -132,8 +132,8 @@ class WebPageSaver {
         
         // 多个 CORS 代理，按可用性排序
         this.corsProxies = [
-            'https://api.allorigins.win/raw?url=',
             'https://api.codetabs.com/v1/proxy/?quest=',
+            'https://api.allorigins.win/raw?url=',
             'https://corsproxy.io/?'
         ];
         
