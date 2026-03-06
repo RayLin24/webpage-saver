@@ -1,7 +1,141 @@
 /**
  * WebPage Saver - 网页保存工具
  * 将任意网页保存为单个HTML文件，支持历史记录、预览和下载
+ * 使用 IndexedDB 支持大文件存储
  */
+
+class StorageManager {
+    constructor() {
+        this.dbName = 'WebPageSaverDB';
+        this.dbVersion = 1;
+        this.storeName = 'pages';
+        this.db = null;
+    }
+    
+    async init() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+            
+            request.onerror = () => reject(request.error);
+            
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve(this.db);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
+                    store.createIndex('savedAt', 'savedAt', { unique: false });
+                    store.createIndex('url', 'url', { unique: false });
+                }
+            };
+        });
+    }
+    
+    async add(item) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.add(item);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    async update(item) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.put(item);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    async delete(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.delete(id);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    async get(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.get(id);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    async getAll() {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const index = store.index('savedAt');
+            const request = index.openCursor(null, 'prev');
+            
+            const results = [];
+            
+            request.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    results.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    resolve(results);
+                }
+            };
+            
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    async clear() {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readwrite');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.clear();
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    async getStorageInfo() {
+        if (navigator.storage && navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            return {
+                usage: estimate.usage || 0,
+                quota: estimate.quota || 0
+            };
+        }
+        
+        // 降级：估算已使用空间
+        const all = await this.getAll();
+        let totalSize = 0;
+        for (const item of all) {
+            if (item.content) {
+                totalSize += new Blob([item.content]).size;
+            }
+        }
+        
+        return {
+            usage: totalSize,
+            quota: 100 * 1024 * 1024 // 假设 100MB
+        };
+    }
+}
 
 class WebPageSaver {
     constructor() {
@@ -22,8 +156,10 @@ class WebPageSaver {
         this.toast = document.getElementById('toast');
         
         // 当前预览的内容
-        this.currentPreviewContent = null;
         this.currentPreviewItem = null;
+        
+        // 使用 IndexedDB 存储
+        this.storage = new StorageManager();
         
         // CORS代理列表（按优先级排序）
         this.corsProxies = [
@@ -33,12 +169,21 @@ class WebPageSaver {
         ];
         
         this.currentProxyIndex = 0;
-        this.storageKey = 'webpage-saver-history';
         
+        // 初始化
         this.init();
     }
     
-    init() {
+    async init() {
+        // 初始化 IndexedDB
+        try {
+            await this.storage.init();
+            console.log('IndexedDB 初始化成功');
+        } catch (e) {
+            console.error('IndexedDB 初始化失败:', e);
+            this.showToast('存储初始化失败，请刷新页面重试', 'error');
+        }
+        
         // 保存按钮事件
         this.saveBtn.addEventListener('click', () => this.save());
         this.urlInput.addEventListener('keypress', (e) => {
@@ -67,8 +212,8 @@ class WebPageSaver {
         });
         
         // 加载历史记录
-        this.renderHistory();
-        this.updateStorageInfo();
+        await this.renderHistory();
+        await this.updateStorageInfo();
     }
     
     // 显示 Toast 提示
@@ -95,69 +240,61 @@ class WebPageSaver {
     }
     
     // 历史记录管理
-    getHistory() {
+    async getHistory() {
         try {
-            const data = localStorage.getItem(this.storageKey);
-            return data ? JSON.parse(data) : [];
+            return await this.storage.getAll();
         } catch (e) {
             console.error('Failed to load history:', e);
             return [];
         }
     }
     
-    saveHistory(history) {
+    async addToHistory(item) {
         try {
-            localStorage.setItem(this.storageKey, JSON.stringify(history));
-            this.updateStorageInfo();
+            await this.storage.add(item);
+            await this.renderHistory();
+            await this.updateStorageInfo();
         } catch (e) {
-            // 存储空间不足，删除最早的记录
-            if (e.name === 'QuotaExceededError') {
-                history.shift();
-                this.saveHistory(history);
-                this.showToast('存储空间不足，已删除最早的记录', 'error');
+            console.error('Failed to save history:', e);
+            this.showToast('保存失败: ' + e.message, 'error');
+        }
+    }
+    
+    async deleteFromHistory(id) {
+        try {
+            await this.storage.delete(id);
+            await this.renderHistory();
+            await this.updateStorageInfo();
+            this.showToast('已删除记录', 'success');
+        } catch (e) {
+            console.error('Failed to delete:', e);
+            this.showToast('删除失败', 'error');
+        }
+    }
+    
+    async clearAllHistory() {
+        if (confirm('确定要清空所有历史记录吗？此操作不可恢复。')) {
+            try {
+                await this.storage.clear();
+                await this.renderHistory();
+                await this.updateStorageInfo();
+                this.showToast('已清空所有记录', 'success');
+            } catch (e) {
+                console.error('Failed to clear:', e);
+                this.showToast('清空失败', 'error');
             }
         }
     }
     
-    addToHistory(item) {
-        const history = this.getHistory();
-        history.unshift(item);
-        
-        // 最多保留 50 条记录
-        if (history.length > 50) {
-            history.pop();
-        }
-        
-        this.saveHistory(history);
-        this.renderHistory();
-    }
-    
-    deleteFromHistory(id) {
-        let history = this.getHistory();
-        history = history.filter(item => item.id !== id);
-        this.saveHistory(history);
-        this.renderHistory();
-        this.showToast('已删除记录', 'success');
-    }
-    
-    clearAllHistory() {
-        if (confirm('确定要清空所有历史记录吗？此操作不可恢复。')) {
-            localStorage.removeItem(this.storageKey);
-            this.renderHistory();
-            this.updateStorageInfo();
-            this.showToast('已清空所有记录', 'success');
-        }
-    }
-    
-    renderHistory() {
-        let history = this.getHistory();
+    async renderHistory() {
+        let history = await this.getHistory();
         const searchTerm = this.searchInput.value.toLowerCase().trim();
         
-        // 搜索过滤
+        // 搜索过滤（只过滤元数据，不加载内容）
         if (searchTerm) {
             history = history.filter(item => 
-                item.title.toLowerCase().includes(searchTerm) ||
-                item.url.toLowerCase().includes(searchTerm)
+                (item.title && item.title.toLowerCase().includes(searchTerm)) ||
+                (item.url && item.url.toLowerCase().includes(searchTerm))
             );
         }
         
@@ -181,6 +318,9 @@ class WebPageSaver {
                     <div class="history-item-time">${this.formatTime(item.savedAt)}</div>
                 </div>
                 <div class="history-item-url">${this.escapeHtml(item.url)}</div>
+                <div class="history-item-meta">
+                    <span>📦 ${this.formatSize(item.size)}</span>
+                </div>
                 <div class="history-item-actions">
                     <button class="btn btn-small btn-success" onclick="app.preview('${item.id}')">👁️ 预览</button>
                     <button class="btn btn-small" onclick="app.download('${item.id}')">📥 下载</button>
@@ -190,24 +330,37 @@ class WebPageSaver {
         `).join('');
     }
     
-    updateStorageInfo() {
+    async updateStorageInfo() {
         try {
-            const data = localStorage.getItem(this.storageKey);
-            const size = data ? new Blob([data]).size : 0;
-            const sizeMB = (size / 1024 / 1024).toFixed(2);
-            const maxSize = 5; // localStorage 通常限制 5MB
-            const percent = Math.min((size / 1024 / 1024 / maxSize) * 100, 100);
+            const info = await this.storage.getStorageInfo();
+            const usedMB = (info.usage / 1024 / 1024).toFixed(2);
+            const quotaMB = (info.quota / 1024 / 1024).toFixed(0);
+            const percent = Math.min((info.usage / info.quota) * 100, 100);
             
-            this.storageSize.textContent = `${sizeMB} MB / ${maxSize} MB`;
+            this.storageSize.textContent = `${usedMB} MB / ${quotaMB} MB`;
             
             // 更新存储条
             const storageBarFill = document.querySelector('.storage-bar-fill');
             if (storageBarFill) {
                 storageBarFill.style.width = `${percent}%`;
+                // 根据使用率改变颜色
+                if (percent > 80) {
+                    storageBarFill.style.background = '#dc3545';
+                } else if (percent > 60) {
+                    storageBarFill.style.background = '#ffc107';
+                } else {
+                    storageBarFill.style.background = '#28a745';
+                }
             }
         } catch (e) {
-            this.storageSize.textContent = '计算失败';
+            this.storageSize.textContent = '计算中...';
         }
+    }
+    
+    formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(2) + ' MB';
     }
     
     formatTime(timestamp) {
@@ -230,51 +383,57 @@ class WebPageSaver {
     }
     
     // 预览功能
-    preview(id) {
-        const history = this.getHistory();
-        const item = history.find(h => h.id === id);
-        
-        if (!item) {
-            this.showToast('记录不存在', 'error');
-            return;
+    async preview(id) {
+        try {
+            const item = await this.storage.get(id);
+            
+            if (!item) {
+                this.showToast('记录不存在', 'error');
+                return;
+            }
+            
+            this.currentPreviewItem = item;
+            this.previewTitle.textContent = item.title || '无标题';
+            
+            // 使用 srcdoc 加载内容
+            this.previewFrame.srcdoc = item.content;
+            this.previewModal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        } catch (e) {
+            console.error('Preview failed:', e);
+            this.showToast('预览失败', 'error');
         }
-        
-        this.currentPreviewItem = item;
-        this.currentPreviewContent = item.content;
-        this.previewTitle.textContent = item.title || '无标题';
-        
-        // 使用 srcdoc 加载内容
-        this.previewFrame.srcdoc = item.content;
-        this.previewModal.classList.add('active');
-        document.body.style.overflow = 'hidden';
     }
     
     closePreview() {
         this.previewModal.classList.remove('active');
         this.previewFrame.srcdoc = '';
         document.body.style.overflow = '';
-        this.currentPreviewContent = null;
         this.currentPreviewItem = null;
     }
     
-    downloadCurrentPreview() {
+    async downloadCurrentPreview() {
         if (this.currentPreviewItem) {
-            this.download(this.currentPreviewItem.id);
+            await this.download(this.currentPreviewItem.id);
         }
     }
     
     // 下载功能
-    download(id) {
-        const history = this.getHistory();
-        const item = history.find(h => h.id === id);
-        
-        if (!item) {
-            this.showToast('记录不存在', 'error');
-            return;
+    async download(id) {
+        try {
+            const item = await this.storage.get(id);
+            
+            if (!item) {
+                this.showToast('记录不存在', 'error');
+                return;
+            }
+            
+            this.downloadHTML(item.content, item.filename);
+            this.showToast('下载已开始', 'success');
+        } catch (e) {
+            console.error('Download failed:', e);
+            this.showToast('下载失败', 'error');
         }
-        
-        this.downloadHTML(item.content, item.filename);
-        this.showToast('下载已开始', 'success');
     }
     
     async fetchWithProxy(url, options = {}) {
@@ -404,8 +563,15 @@ class WebPageSaver {
             this.updateProgress(90, '正在保存...');
             const finalHtml = this.serializeHTML(doc);
             const filename = this.getFilename(url);
+            const size = new Blob([finalHtml]).size;
             
-            // 保存到历史记录
+            // 检查文件大小
+            const sizeMB = size / 1024 / 1024;
+            if (sizeMB > 100) {
+                throw new Error(`文件过大 (${sizeMB.toFixed(2)} MB)，超过 100MB 限制`);
+            }
+            
+            // 保存到 IndexedDB
             const historyItem = {
                 id: Date.now().toString(),
                 url: url,
@@ -413,17 +579,17 @@ class WebPageSaver {
                 filename: filename,
                 content: finalHtml,
                 savedAt: new Date().toISOString(),
-                size: new Blob([finalHtml]).size
+                size: size
             };
             
-            this.addToHistory(historyItem);
+            await this.addToHistory(historyItem);
             
             // 下载文件
             this.updateProgress(100, '完成！');
             this.downloadHTML(finalHtml, filename);
             
-            this.showStatus('✅ 网页已成功保存！', 'success');
-            this.showToast('网页保存成功！', 'success');
+            this.showStatus(`✅ 网页已成功保存！(${this.formatSize(size)})`, 'success');
+            this.showToast(`网页保存成功！大小: ${this.formatSize(size)}`, 'success');
             
             // 清空输入
             this.urlInput.value = '';
@@ -640,6 +806,6 @@ class WebPageSaver {
 
 // 初始化
 let app;
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     app = new WebPageSaver();
 });
