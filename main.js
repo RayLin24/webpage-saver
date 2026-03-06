@@ -13,12 +13,23 @@ class StorageManager {
     }
     
     async init() {
+        // 请求持久化存储（防止浏览器清理数据）
+        if (navigator.storage && navigator.storage.persist) {
+            const isPersisted = await navigator.storage.persist();
+            console.log('持久化存储:', isPersisted ? '已启用' : '未启用');
+        }
+        
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.dbVersion);
             
-            request.onerror = () => reject(request.error);
+            request.onerror = () => {
+                console.error('IndexedDB 打开失败:', request.error);
+                reject(request.error);
+            };
+            
             request.onsuccess = () => {
                 this.db = request.result;
+                console.log('IndexedDB 连接成功');
                 resolve(this.db);
             };
             
@@ -28,6 +39,7 @@ class StorageManager {
                     const store = db.createObjectStore(this.storeName, { keyPath: 'id' });
                     store.createIndex('savedAt', 'savedAt', { unique: false });
                     store.createIndex('url', 'url', { unique: false });
+                    console.log('IndexedDB 存储已创建');
                 }
             };
         });
@@ -35,11 +47,24 @@ class StorageManager {
     
     async add(item) {
         return new Promise((resolve, reject) => {
+            if (!this.db) {
+                reject(new Error('IndexedDB 未初始化'));
+                return;
+            }
+            
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
             const request = store.add(item);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+            
+            request.onsuccess = () => {
+                console.log('记录已保存:', item.id);
+                resolve(request.result);
+            };
+            
+            request.onerror = () => {
+                console.error('保存记录失败:', request.error);
+                reject(request.error);
+            };
         });
     }
     
@@ -65,21 +90,33 @@ class StorageManager {
     
     async getAll() {
         return new Promise((resolve, reject) => {
+            if (!this.db) {
+                console.error('IndexedDB 未初始化');
+                resolve([]);
+                return;
+            }
+            
             const transaction = this.db.transaction([this.storeName], 'readonly');
             const store = transaction.objectStore(this.storeName);
             const index = store.index('savedAt');
             const request = index.openCursor(null, 'prev');
             const results = [];
+            
             request.onsuccess = (event) => {
                 const cursor = event.target.result;
                 if (cursor) {
                     results.push(cursor.value);
                     cursor.continue();
                 } else {
+                    console.log('加载历史记录:', results.length, '条');
                     resolve(results);
                 }
             };
-            request.onerror = () => reject(request.error);
+            
+            request.onerror = () => {
+                console.error('读取历史记录失败:', request.error);
+                reject(request.error);
+            };
         });
     }
     
