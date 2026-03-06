@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试页面 - WebPage Saver</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        h2 { color: #666; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        .color-box {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .color-box div {
+            width: 100px;
+            height: 100px;
+            border-radius: 8px;
+        }
+        .red { background: #e74c3c; }
+        .blue { background: #3498db; }
+        .green { background: #2ecc71; }
+        img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .external-img {
+            border: 3px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-card">
+        <h1>🧪 WebPage Saver 测试页面</h1>
+        <p>这是一个用于测试网页保存功能的测试页面。</p>
+    </div>
+    
+    <div class="test-card">
+        <h2>文字样式测试</h2>
+        <p>这是普通文字。<strong>这是粗体文字。</strong><em>这是斜体文字。</em></p>
+        <p><code>这是代码文字</code></p>
+        <p style="color: red;">这是红色文字（内联样式）</p>
+    </div>
+    
+    <div class="test-card">
+        <h2>颜色方块测试（CSS背景）</h2>
+        <div class="color-box">
+            <div class="red"></div>
+            <div class="blue"></div>
+            <div class="green"></div>
+        </div>
+    </div>
+    
+    <div class="test-card">
+        <h2>图片测试</h2>
+        <p>外部图片（需要CORS代理）：</p>
+        <img class="external-img" src="https://picsum.photos/400/200" alt="随机图片">
+        <p>Data URI图片（应该保持不变）：</p>
+        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%23667eea'/%3E%3C/svg%3E" alt="SVG圆圈">
+    </div>
+    
+    <div class="test-card">
+        <h2>链接测试</h2>
+        <p><a href="https://example.com">外部链接</a></p>
+        <p><a href="#section1">页内锚点</a></p>
+    </div>
+    
+    <div class="test-card">
+        <h2>列表测试</h2>
+        <ul>
+            <li>无序列表项 1</li>
+            <li>无序列表项 2</li>
+            <li>无序列表项 3</li>
+        </ul>
+        <ol>
+            <li>有序列表项 1</li>
+            <li>有序列表项 2</li>
+            <li>有序列表项 3</li>
+        </ol>
+    </div>
+    
+    <div class="test-card">
+        <h2>表格测试</h2>
+        <table border="1" cellpadding="10" style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #667eea; color: white;">
+                    <th>列1</th>
+                    <th>列2</th>
+                    <th>列3</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>数据1</td>
+                    <td>数据2</td>
+                    <td>数据3</td>
+                </tr>
+                <tr>
+                    <td>数据4</td>
+                    <td>数据5</td>
+                    <td>数据6</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="test-card">
+        <h2>JavaScript测试（可选移除）</h2>
+        <p id="js-test">如果看到这条消息变成"JavaScript正常工作"，说明脚本未移除。</p>
+        <script>
+            document.getElementById('js-test').textContent = '✅ JavaScript正常工作！';
+        </script>
+    </div>
+    
+    <div id="section1" class="test-card">
+        <h2>锚点目标</h2>
+        <p>这是锚点跳转的目标位置。</p>
+    </div>
+</body>
+</html>
