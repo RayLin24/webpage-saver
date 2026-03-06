@@ -130,8 +130,10 @@ class WebPageSaver {
         this.currentPreviewItem = null;
         this.storage = new StorageManager();
         
+        // 多个 CORS 代理，按可用性排序
         this.corsProxies = [
             'https://api.allorigins.win/raw?url=',
+            'https://api.codetabs.com/v1/proxy/?quest=',
             'https://corsproxy.io/?'
         ];
         
@@ -399,7 +401,7 @@ class WebPageSaver {
             const proxy = this.corsProxies[(this.currentProxyIndex + i) % this.corsProxies.length];
             try {
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
                 
                 const response = await fetch(proxy + encodeURIComponent(url), {
                     signal: controller.signal
