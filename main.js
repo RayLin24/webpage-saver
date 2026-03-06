@@ -617,7 +617,6 @@ class WebPageSaver {
         for (const attr of lazyAttrs) {
             const val = img.getAttribute(attr);
             if (val && !val.startsWith('data:')) {
-                // 处理 srcset 格式
                 const url = val.split(/[\s,]+/)[0];
                 sources.push({ url, priority: 1 });
             }
@@ -668,6 +667,14 @@ class WebPageSaver {
                 return; // 成功则退出
             } else {
                 this.stats.imagesFailed++;
+                
+                // 对于无法下载的图片，尝试使用绝对 URL
+                if (absoluteUrl.startsWith('http')) {
+                    img.setAttribute('src', absoluteUrl);
+                    lazyAttrs.forEach(attr => img.removeAttribute(attr));
+                    // 设置 crossorigin 属性允许加载外部图片
+                    img.setAttribute('crossorigin', 'anonymous');
+                }
             }
         }
     }
@@ -861,6 +868,8 @@ class WebPageSaver {
             filename += '.html';
         }
         
+        console.log('开始下载:', filename, '大小:', (html.length / 1024).toFixed(1), 'KB');
+        
         try {
             // 方法1: 使用 Blob + URL.createObjectURL
             const blob = new Blob([html], { type: 'text/html' });
@@ -870,6 +879,7 @@ class WebPageSaver {
             a.href = url;
             a.download = filename;
             a.rel = 'noopener';
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
             
@@ -877,30 +887,25 @@ class WebPageSaver {
             setTimeout(() => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
+                console.log('下载完成:', filename);
             }, 100);
             
-            console.log('下载已触发:', filename);
+            this.showToast('下载已开始: ' + filename, 'success');
             
         } catch (e) {
             console.error('下载失败:', e);
+            this.showToast('下载失败: ' + e.message, 'error');
             
-            // 方法2: 使用 data URI
+            // 方法2: 打开新窗口让用户手动保存
             try {
-                const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
-                const a = document.createElement('a');
-                a.href = dataUrl;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            } catch (e2) {
-                // 方法3: 打开新窗口让用户手动保存
                 const win = window.open('', '_blank');
                 if (win) {
-                    win.document.write(html);
+                    win.document.write('<!DOCTYPE html>' + html);
                     win.document.close();
                     this.showToast('请使用 Ctrl+S 保存页面', 'info');
                 }
+            } catch (e2) {
+                console.error('备用下载也失败:', e2);
             }
         }
     }
