@@ -1,6 +1,6 @@
 /**
  * WebPage Saver - 网页保存工具
- * 将任意网页保存为单个HTML文件
+ * 将任意网页保存为单个HTML文件，支持历史记录、预览和下载
  */
 
 class WebPageSaver {
@@ -11,6 +11,19 @@ class WebPageSaver {
         this.progressDiv = document.getElementById('progress');
         this.progressFill = document.getElementById('progressFill');
         this.progressText = document.getElementById('progressText');
+        this.historyList = document.getElementById('historyList');
+        this.historyCount = document.getElementById('historyCount');
+        this.searchInput = document.getElementById('searchInput');
+        this.clearAllBtn = document.getElementById('clearAllBtn');
+        this.storageSize = document.getElementById('storageSize');
+        this.previewModal = document.getElementById('previewModal');
+        this.previewFrame = document.getElementById('previewFrame');
+        this.previewTitle = document.getElementById('previewTitle');
+        this.toast = document.getElementById('toast');
+        
+        // 当前预览的内容
+        this.currentPreviewContent = null;
+        this.currentPreviewItem = null;
         
         // CORS代理列表（按优先级排序）
         this.corsProxies = [
@@ -20,14 +33,51 @@ class WebPageSaver {
         ];
         
         this.currentProxyIndex = 0;
+        this.storageKey = 'webpage-saver-history';
+        
         this.init();
     }
     
     init() {
+        // 保存按钮事件
         this.saveBtn.addEventListener('click', () => this.save());
         this.urlInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.save();
         });
+        
+        // 搜索功能
+        this.searchInput.addEventListener('input', () => this.renderHistory());
+        
+        // 清空历史
+        this.clearAllBtn.addEventListener('click', () => this.clearAllHistory());
+        
+        // 预览模态框事件
+        document.getElementById('closeModal').addEventListener('click', () => this.closePreview());
+        document.getElementById('closePreviewBtn').addEventListener('click', () => this.closePreview());
+        document.getElementById('downloadFromPreview').addEventListener('click', () => this.downloadCurrentPreview());
+        
+        // 点击遮罩关闭
+        this.previewModal.addEventListener('click', (e) => {
+            if (e.target === this.previewModal) this.closePreview();
+        });
+        
+        // ESC关闭预览
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.closePreview();
+        });
+        
+        // 加载历史记录
+        this.renderHistory();
+        this.updateStorageInfo();
+    }
+    
+    // 显示 Toast 提示
+    showToast(message, type = 'info') {
+        this.toast.textContent = message;
+        this.toast.className = `toast show ${type}`;
+        setTimeout(() => {
+            this.toast.classList.remove('show');
+        }, 3000);
     }
     
     showStatus(message, type = 'info') {
@@ -42,6 +92,189 @@ class WebPageSaver {
     updateProgress(percent, text) {
         this.progressFill.style.width = `${percent}%`;
         this.progressText.textContent = text;
+    }
+    
+    // 历史记录管理
+    getHistory() {
+        try {
+            const data = localStorage.getItem(this.storageKey);
+            return data ? JSON.parse(data) : [];
+        } catch (e) {
+            console.error('Failed to load history:', e);
+            return [];
+        }
+    }
+    
+    saveHistory(history) {
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(history));
+            this.updateStorageInfo();
+        } catch (e) {
+            // 存储空间不足，删除最早的记录
+            if (e.name === 'QuotaExceededError') {
+                history.shift();
+                this.saveHistory(history);
+                this.showToast('存储空间不足，已删除最早的记录', 'error');
+            }
+        }
+    }
+    
+    addToHistory(item) {
+        const history = this.getHistory();
+        history.unshift(item);
+        
+        // 最多保留 50 条记录
+        if (history.length > 50) {
+            history.pop();
+        }
+        
+        this.saveHistory(history);
+        this.renderHistory();
+    }
+    
+    deleteFromHistory(id) {
+        let history = this.getHistory();
+        history = history.filter(item => item.id !== id);
+        this.saveHistory(history);
+        this.renderHistory();
+        this.showToast('已删除记录', 'success');
+    }
+    
+    clearAllHistory() {
+        if (confirm('确定要清空所有历史记录吗？此操作不可恢复。')) {
+            localStorage.removeItem(this.storageKey);
+            this.renderHistory();
+            this.updateStorageInfo();
+            this.showToast('已清空所有记录', 'success');
+        }
+    }
+    
+    renderHistory() {
+        let history = this.getHistory();
+        const searchTerm = this.searchInput.value.toLowerCase().trim();
+        
+        // 搜索过滤
+        if (searchTerm) {
+            history = history.filter(item => 
+                item.title.toLowerCase().includes(searchTerm) ||
+                item.url.toLowerCase().includes(searchTerm)
+            );
+        }
+        
+        this.historyCount.textContent = history.length;
+        
+        if (history.length === 0) {
+            this.historyList.innerHTML = `
+                <div class="history-empty">
+                    <div class="history-empty-icon">${searchTerm ? '🔍' : '📭'}</div>
+                    <p>${searchTerm ? '未找到匹配的记录' : '暂无历史记录'}</p>
+                    ${!searchTerm ? '<p style="font-size: 12px; margin-top: 5px;">保存的网页将显示在这里</p>' : ''}
+                </div>
+            `;
+            return;
+        }
+        
+        this.historyList.innerHTML = history.map(item => `
+            <div class="history-item" data-id="${item.id}">
+                <div class="history-item-header">
+                    <div class="history-item-title">${this.escapeHtml(item.title || '无标题')}</div>
+                    <div class="history-item-time">${this.formatTime(item.savedAt)}</div>
+                </div>
+                <div class="history-item-url">${this.escapeHtml(item.url)}</div>
+                <div class="history-item-actions">
+                    <button class="btn btn-small btn-success" onclick="app.preview('${item.id}')">👁️ 预览</button>
+                    <button class="btn btn-small" onclick="app.download('${item.id}')">📥 下载</button>
+                    <button class="btn btn-small btn-danger" onclick="app.deleteFromHistory('${item.id}')">🗑️ 删除</button>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    updateStorageInfo() {
+        try {
+            const data = localStorage.getItem(this.storageKey);
+            const size = data ? new Blob([data]).size : 0;
+            const sizeMB = (size / 1024 / 1024).toFixed(2);
+            const maxSize = 5; // localStorage 通常限制 5MB
+            const percent = Math.min((size / 1024 / 1024 / maxSize) * 100, 100);
+            
+            this.storageSize.textContent = `${sizeMB} MB / ${maxSize} MB`;
+            
+            // 更新存储条
+            const storageBarFill = document.querySelector('.storage-bar-fill');
+            if (storageBarFill) {
+                storageBarFill.style.width = `${percent}%`;
+            }
+        } catch (e) {
+            this.storageSize.textContent = '计算失败';
+        }
+    }
+    
+    formatTime(timestamp) {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diff = now - date;
+        
+        if (diff < 60000) return '刚刚';
+        if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+        if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`;
+        
+        return date.toLocaleDateString('zh-CN');
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // 预览功能
+    preview(id) {
+        const history = this.getHistory();
+        const item = history.find(h => h.id === id);
+        
+        if (!item) {
+            this.showToast('记录不存在', 'error');
+            return;
+        }
+        
+        this.currentPreviewItem = item;
+        this.currentPreviewContent = item.content;
+        this.previewTitle.textContent = item.title || '无标题';
+        
+        // 使用 srcdoc 加载内容
+        this.previewFrame.srcdoc = item.content;
+        this.previewModal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+    
+    closePreview() {
+        this.previewModal.classList.remove('active');
+        this.previewFrame.srcdoc = '';
+        document.body.style.overflow = '';
+        this.currentPreviewContent = null;
+        this.currentPreviewItem = null;
+    }
+    
+    downloadCurrentPreview() {
+        if (this.currentPreviewItem) {
+            this.download(this.currentPreviewItem.id);
+        }
+    }
+    
+    // 下载功能
+    download(id) {
+        const history = this.getHistory();
+        const item = history.find(h => h.id === id);
+        
+        if (!item) {
+            this.showToast('记录不存在', 'error');
+            return;
+        }
+        
+        this.downloadHTML(item.content, item.filename);
+        this.showToast('下载已开始', 'success');
     }
     
     async fetchWithProxy(url, options = {}) {
@@ -61,7 +294,6 @@ class WebPageSaver {
                 });
                 
                 if (response.ok) {
-                    // 记住成功的代理
                     this.currentProxyIndex = proxyIndex;
                     return response;
                 }
@@ -128,6 +360,9 @@ class WebPageSaver {
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             
+            // 获取标题
+            const title = doc.querySelector('title')?.textContent || url;
+            
             // 获取选项
             const options = {
                 inlineImages: document.getElementById('inlineImages').checked,
@@ -166,18 +401,37 @@ class WebPageSaver {
             this.addSaveInfo(doc, url);
             
             // 生成最终HTML
-            this.updateProgress(90, '正在准备下载...');
+            this.updateProgress(90, '正在保存...');
             const finalHtml = this.serializeHTML(doc);
+            const filename = this.getFilename(url);
+            
+            // 保存到历史记录
+            const historyItem = {
+                id: Date.now().toString(),
+                url: url,
+                title: title,
+                filename: filename,
+                content: finalHtml,
+                savedAt: new Date().toISOString(),
+                size: new Blob([finalHtml]).size
+            };
+            
+            this.addToHistory(historyItem);
             
             // 下载文件
             this.updateProgress(100, '完成！');
-            this.downloadHTML(finalHtml, this.getFilename(url));
+            this.downloadHTML(finalHtml, filename);
             
             this.showStatus('✅ 网页已成功保存！', 'success');
+            this.showToast('网页保存成功！', 'success');
+            
+            // 清空输入
+            this.urlInput.value = '';
             
         } catch (error) {
             console.error('Save failed:', error);
             this.showStatus(`❌ 保存失败: ${error.message}`, 'error');
+            this.showToast('保存失败: ' + error.message, 'error');
         } finally {
             this.saveBtn.disabled = false;
             setTimeout(() => this.showProgress(false), 2000);
@@ -185,7 +439,6 @@ class WebPageSaver {
     }
     
     async processStyles(doc, baseUrl, options) {
-        // 处理 <link rel="stylesheet">
         const links = doc.querySelectorAll('link[rel="stylesheet"]');
         for (const link of links) {
             try {
@@ -196,7 +449,6 @@ class WebPageSaver {
                 const response = await this.fetchWithProxy(absoluteUrl);
                 const css = await response.text();
                 
-                // 创建 style 标签替换 link
                 const style = doc.createElement('style');
                 style.textContent = css;
                 link.replaceWith(style);
@@ -205,15 +457,11 @@ class WebPageSaver {
             }
         }
         
-        // 处理内联 <style> 中的 @import 和 url()
         const styles = doc.querySelectorAll('style');
         for (const style of styles) {
             let css = style.textContent;
-            
-            // 处理 @import
             css = await this.processCSSImports(css, baseUrl);
             
-            // 处理 url() 中的资源
             if (options.inlineFonts || options.inlineImages) {
                 css = await this.processCSSUrls(css, baseUrl, options);
             }
@@ -251,7 +499,6 @@ class WebPageSaver {
             const resourceUrl = match[1];
             const absoluteUrl = this.resolveUrl(baseUrl, resourceUrl);
             
-            // 判断是否需要处理
             const isFont = this.isFontUrl(resourceUrl);
             const isImage = this.isImageUrl(resourceUrl);
             
@@ -296,7 +543,6 @@ class WebPageSaver {
             }
         }
         
-        // 处理 srcset
         for (const img of doc.querySelectorAll('img[srcset]')) {
             const srcset = img.getAttribute('srcset');
             const newSrcset = await this.processSrcset(srcset, baseUrl);
@@ -305,7 +551,6 @@ class WebPageSaver {
             }
         }
         
-        // 处理 picture source
         const sources = doc.querySelectorAll('source[srcset]');
         for (const source of sources) {
             const srcset = source.getAttribute('srcset');
@@ -336,10 +581,8 @@ class WebPageSaver {
     }
     
     removeScripts(doc) {
-        // 移除 script 标签
         doc.querySelectorAll('script').forEach(el => el.remove());
         
-        // 移除事件处理器
         doc.querySelectorAll('[onclick],[onload],[onerror],[onmouseover],[onmouseout]').forEach(el => {
             el.removeAttribute('onclick');
             el.removeAttribute('onload');
@@ -348,12 +591,10 @@ class WebPageSaver {
             el.removeAttribute('onmouseout');
         });
         
-        // 移除 noscript 标签
         doc.querySelectorAll('noscript').forEach(el => el.remove());
     }
     
     addSaveInfo(doc, originalUrl) {
-        // 添加保存信息注释
         const comment = doc.createComment(`
     Saved by WebPage Saver
     Original URL: ${originalUrl}
@@ -361,7 +602,6 @@ class WebPageSaver {
     `);
         doc.documentElement.insertBefore(comment, doc.documentElement.firstChild);
         
-        // 更新 title
         const title = doc.querySelector('title');
         if (title) {
             title.textContent = `[Saved] ${title.textContent}`;
@@ -399,6 +639,7 @@ class WebPageSaver {
 }
 
 // 初始化
+let app;
 document.addEventListener('DOMContentLoaded', () => {
-    new WebPageSaver();
+    app = new WebPageSaver();
 });
