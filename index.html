@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebPage Saver - 网页保存工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        input[type="url"] {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="url"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .options {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .option-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .option-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .option-item input[type="checkbox"] {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+        }
+        
+        .option-item label {
+            margin-bottom: 0;
+            cursor: pointer;
+            font-weight: normal;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+            display: block;
+        }
+        
+        .status.success {
+            background: #e8f5e9;
+            color: #388e3c;
+            display: block;
+        }
+        
+        .status.error {
+            background: #ffebee;
+            color: #d32f2f;
+            display: block;
+        }
+        
+        .progress {
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .progress-bar {
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .progress-text {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌐 WebPage Saver</h1>
+        <p class="subtitle">将任意网页保存为单个HTML文件，包含所有资源</p>
+        
+        <div class="input-group">
+            <label for="url">网页URL</label>
+            <input type="url" id="url" placeholder="https://example.com" required>
+        </div>
+        
+        <div class="options">
+            <div class="option-item">
+                <input type="checkbox" id="inlineImages" checked>
+                <label for="inlineImages">内联图片（转为Base64）</label>
+            </div>
+            <div class="option-item">
+                <input type="checkbox" id="inlineCSS" checked>
+                <label for="inlineCSS">内联CSS样式</label>
+            </div>
+            <div class="option-item">
+                <input type="checkbox" id="inlineFonts" checked>
+                <label for="inlineFonts">内联字体文件</label>
+            </div>
+            <div class="option-item">
+                <input type="checkbox" id="removeScripts">
+                <label for="removeScripts">移除JavaScript（提高兼容性）</label>
+            </div>
+        </div>
+        
+        <button id="saveBtn">开始保存</button>
+        
+        <div class="progress" id="progress">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">准备中...</div>
+        </div>
+        
+        <div class="status" id="status"></div>
+        
+        <div class="footer">
+            <p>使用 <a href="https://github.com" target="_blank">GitHub</a> 托管 | 
+               灵感来源于 <a href="https://github.com/gildas-lormeau/SingleFile" target="_blank">SingleFile</a></p>
+        </div>
+    </div>
+    
+    <script src="main.js"></script>
+</body>
+</html>
