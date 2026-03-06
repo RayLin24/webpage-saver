@@ -706,11 +706,6 @@ class WebPageSaver {
         el.setAttribute('style', style);
     }
     
-    async processInlineStyleImages(doc, baseUrl) {
-        const elements = Array.from(doc.querySelectorAll('[style*="url("]'));
-        await Promise.all(elements.map(el => this.processInlineStyleImage(el, baseUrl)));
-    }
-    
     async processPictureElements(doc, baseUrl) {
         const sources = Array.from(doc.querySelectorAll('source[srcset], source[src]'));
         
