@@ -546,8 +546,11 @@ class WebPageSaver {
     
     // 获取图片代理 URL（用于无法下载的图片）
     getProxyImageUrl(originalUrl) {
-        // 使用 CORS 代理作为图片代理
-        // 这样浏览器会通过代理加载图片，绕过防盗链
+        // 如果已经是代理 URL，直接返回
+        if (originalUrl.includes('codetabs.com') || originalUrl.includes('allorigins.win')) {
+            return originalUrl;
+        }
+        // 使用 CORS 代理作为图片代理，绕过防盗链
         return this.corsProxies[0] + encodeURIComponent(originalUrl);
     }
     
@@ -1074,14 +1077,45 @@ class WebPageSaver {
     }
     
     addSaveInfo(doc, originalUrl) {
-        const comment = doc.createComment(`Saved by WebPage Saver | ${originalUrl} | ${new Date().toISOString()}`);
+        const comment = doc.createComment(`
+    ============================================
+    Saved by WebPage Saver
+    原始地址: ${originalUrl}
+    保存时间: ${new Date().toLocaleString('zh-CN')}
+    ============================================
+    `);
         doc.documentElement.insertBefore(comment, doc.documentElement.firstChild);
         
-        const title = doc.querySelector('title');
-        if (title) title.textContent = `[Saved] ${title.textContent}`;
+        // 不修改标题，保持原始格式
     }
     
     serializeHTML(doc) {
+        // 添加必要的 meta 标签确保正确显示
+        let charset = doc.querySelector('meta[charset]');
+        if (!charset) {
+            charset = doc.createElement('meta');
+            charset.setAttribute('charset', 'UTF-8');
+            doc.head?.insertBefore(charset, doc.head.firstChild);
+        }
+        
+        // 添加 viewport 确保移动端显示
+        let viewport = doc.querySelector('meta[name="viewport"]');
+        if (!viewport) {
+            viewport = doc.createElement('meta');
+            viewport.setAttribute('name', 'viewport');
+            viewport.setAttribute('content', 'width=device-width, initial-scale=1.0');
+            doc.head?.appendChild(viewport);
+        }
+        
+        // 确保 referrer policy 允许加载外部图片
+        let referrer = doc.querySelector('meta[name="referrer"]');
+        if (!referrer) {
+            referrer = doc.createElement('meta');
+            referrer.setAttribute('name', 'referrer');
+            referrer.setAttribute('content', 'no-referrer');
+            doc.head?.appendChild(referrer);
+        }
+        
         return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML;
     }
     
