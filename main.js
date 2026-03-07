@@ -460,6 +460,13 @@ class WebPageSaver {
         return null;
     }
     
+    // 获取图片代理 URL（用于无法下载的图片）
+    getProxyImageUrl(originalUrl) {
+        // 使用 CORS 代理作为图片代理
+        // 这样浏览器会通过代理加载图片，绕过防盗链
+        return this.corsProxies[0] + encodeURIComponent(originalUrl);
+    }
+    
     resolveUrl(base, relative) {
         if (!relative || relative.startsWith('data:')) return relative;
         if (relative.startsWith('//')) return 'https:' + relative;
@@ -648,6 +655,7 @@ class WebPageSaver {
             const base64 = await this.fetchAsBase64(absoluteUrl);
             
             if (base64) {
+                // 成功下载，使用 base64
                 img.setAttribute('src', base64);
                 lazyAttrs.forEach(attr => img.removeAttribute(attr));
                 img.removeAttribute('srcset');
@@ -655,10 +663,19 @@ class WebPageSaver {
                 this.stats.imagesSuccess++;
                 return;
             } else {
+                // 下载失败，使用代理 URL
                 this.stats.imagesFailed++;
                 if (absoluteUrl.startsWith('http')) {
-                    img.setAttribute('src', absoluteUrl);
-                    img.setAttribute('crossorigin', 'anonymous');
+                    // 使用代理 URL 代替原始 URL，绕过防盗链
+                    const proxyUrl = this.getProxyImageUrl(absoluteUrl);
+                    img.setAttribute('src', proxyUrl);
+                    img.removeAttribute('crossorigin');
+                    lazyAttrs.forEach(attr => img.removeAttribute(attr));
+                    img.removeAttribute('srcset');
+                    img.removeAttribute('loading');
+                    // 记录原始 URL
+                    img.setAttribute('data-original-src', absoluteUrl);
+                    return;
                 }
             }
         }
