@@ -791,7 +791,8 @@ class WebPageSaver {
         const proxyPatterns = [
             /api\.codetabs\.com\/v1\/proxy/i,
             /api\.allorigins\.win\/raw/i,
-            /corsproxy\.io/i
+            /corsproxy\.io/i,
+            /cors-anywhere/i
         ];
         
         // 清理图片的代理 URL
@@ -804,6 +805,7 @@ class WebPageSaver {
                     const originalUrl = decodeURIComponent(match[1]);
                     img.setAttribute('src', originalUrl);
                     img.setAttribute('data-was-proxy', 'true');
+                    console.log('清理代理URL:', src.substring(0, 50) + '... → ', originalUrl);
                 }
             }
         });
@@ -811,6 +813,7 @@ class WebPageSaver {
         // 清理 CSS 中的代理 URL
         doc.querySelectorAll('[style*="url("]').forEach(el => {
             let style = el.getAttribute('style');
+            let changed = false;
             proxyPatterns.forEach(pattern => {
                 const matches = style.match(/url\([^)]+\)/gi) || [];
                 matches.forEach(match => {
@@ -819,11 +822,36 @@ class WebPageSaver {
                         if (urlMatch) {
                             const originalUrl = decodeURIComponent(urlMatch[1]);
                             style = style.replace(match, `url(${originalUrl})`);
+                            changed = true;
                         }
                     }
                 });
             });
-            el.setAttribute('style', style);
+            if (changed) {
+                el.setAttribute('style', style);
+            }
+        });
+        
+        // 清理 style 标签中的代理 URL
+        doc.querySelectorAll('style').forEach(styleEl => {
+            let css = styleEl.textContent;
+            let changed = false;
+            proxyPatterns.forEach(pattern => {
+                const matches = css.match(/url\([^)]+\)/gi) || [];
+                matches.forEach(match => {
+                    if (pattern.test(match)) {
+                        const urlMatch = match.match(/[?&](?:url|quest)=([^&)]+)/i);
+                        if (urlMatch) {
+                            const originalUrl = decodeURIComponent(urlMatch[1]);
+                            css = css.replace(match, `url(${originalUrl})`);
+                            changed = true;
+                        }
+                    }
+                });
+            });
+            if (changed) {
+                styleEl.textContent = css;
+            }
         });
     }
     
