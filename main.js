@@ -804,6 +804,13 @@ class WebPageSaver {
             ? ` (图片: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed})` : '';
         this.showStatus(`✅ 保存成功！(${this.formatSize(size)})${imgInfo}`, 'success');
         
+        // 如果有图片下载失败，提示用户
+        if (this.stats.imagesFailed > 0 && this.stats.imagesFailed >= this.stats.imagesProcessed * 0.5) {
+            setTimeout(() => {
+                this.showToast(`⚠️ ${this.stats.imagesFailed} 张图片无法下载（CDN防盗链），建议在原网站查看`, 'info');
+            }, 1000);
+        }
+        
         this.urlInput.value = '';
     }
     
