@@ -861,18 +861,17 @@ class WebPageSaver {
                 this.stats.imagesSuccess++;
                 return;
             } else {
-                // 下载失败，使用代理 URL
+                // 下载失败，保留原始 URL
                 this.stats.imagesFailed++;
                 if (absoluteUrl.startsWith('http')) {
-                    // 使用代理 URL 代替原始 URL，绕过防盗链
-                    const proxyUrl = this.getProxyImageUrl(absoluteUrl);
-                    img.setAttribute('src', proxyUrl);
+                    // 保留原始 URL，移除懒加载属性
+                    img.setAttribute('src', absoluteUrl);
                     img.removeAttribute('crossorigin');
                     lazyAttrs.forEach(attr => img.removeAttribute(attr));
                     img.removeAttribute('srcset');
                     img.removeAttribute('loading');
-                    // 记录原始 URL
-                    img.setAttribute('data-original-src', absoluteUrl);
+                    // 添加 referrerpolicy 让浏览器发送 referrer
+                    img.setAttribute('referrerpolicy', 'no-referrer');
                     return;
                 }
             }
