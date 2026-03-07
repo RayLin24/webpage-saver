@@ -568,6 +568,23 @@ class WebPageSaver {
         return /\.(png|jpe?g|gif|webp|svg|ico|bmp|avif)(\?|$)/i.test(cleanUrl);
     }
     
+    // 检测是否是微信公众号链接
+    isWechatArticle(url) {
+        return url.includes('mp.weixin.qq.com') || url.includes('mp.weixin.qq.com/s/');
+    }
+    
+    // 通过 wechat-article-exporter API 获取微信文章
+    async fetchWechatArticle(url) {
+        const apiUrl = `https://down.mptext.top/api/public/v1/download?url=${encodeURIComponent(url)}&format=html`;
+        
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+            throw new Error('微信文章获取失败');
+        }
+        
+        return await response.text();
+    }
+    
     async save() {
         // 检查是否有选中的文件
         if (this.selectedFile) {
@@ -596,8 +613,17 @@ class WebPageSaver {
         
         try {
             this.updateProgress(10, '正在获取HTML...');
-            const response = await this.fetchWithProxy(url);
-            let html = await response.text();
+            
+            let html;
+            
+            // 检测是否是微信公众号链接
+            if (this.isWechatArticle(url)) {
+                this.updateProgress(15, '检测到微信文章，使用专用API获取...');
+                html = await this.fetchWechatArticle(url);
+            } else {
+                const response = await this.fetchWithProxy(url);
+                html = await response.text();
+            }
             
             await this.processAndSave(html, url);
             
