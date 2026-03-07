@@ -482,6 +482,87 @@
             color: white;
             text-decoration: none;
         }
+        
+        /* 分隔线 */
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 20px 0;
+            color: #999;
+            font-size: 13px;
+        }
+        
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #e0e0e0;
+        }
+        
+        .divider span {
+            padding: 0 15px;
+        }
+        
+        /* 文件上传区域 */
+        .file-upload-area {
+            border: 2px dashed #d0d0d0;
+            border-radius: 8px;
+            padding: 30px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .file-upload-area:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        
+        .file-upload-area.dragover {
+            border-color: #667eea;
+            background: #f0f3ff;
+        }
+        
+        .file-upload-icon {
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+        
+        .file-upload-text {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .file-upload-hint {
+            font-size: 12px;
+            color: #999;
+        }
+        
+        .file-selected {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 15px;
+            background: #e8f5e9;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #388e3c;
+        }
+        
+        .btn-remove {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #666;
+            padding: 0 5px;
+        }
+        
+        .btn-remove:hover {
+            color: #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -501,6 +582,26 @@
                 <div class="input-group">
                     <label for="url">网页URL</label>
                     <input type="url" id="url" placeholder="https://example.com" required>
+                </div>
+                
+                <div class="divider">
+                    <span>或者</span>
+                </div>
+                
+                <div class="input-group">
+                    <label for="fileInput">上传本地 HTML 文件</label>
+                    <div class="file-upload" id="fileUpload">
+                        <input type="file" id="fileInput" accept=".html,.htm" hidden>
+                        <div class="file-upload-area" id="fileUploadArea">
+                            <div class="file-upload-icon">📁</div>
+                            <div class="file-upload-text">点击或拖拽文件到这里</div>
+                            <div class="file-upload-hint">支持 .html, .htm 文件</div>
+                        </div>
+                        <div class="file-selected" id="fileSelected" style="display: none;">
+                            <span id="fileName"></span>
+                            <button class="btn-remove" id="removeFile">&times;</button>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="options">

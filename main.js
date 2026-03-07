@@ -127,6 +127,14 @@ class WebPageSaver {
         this.previewTitle = document.getElementById('previewTitle');
         this.toast = document.getElementById('toast');
         
+        // 文件上传相关元素
+        this.fileInput = document.getElementById('fileInput');
+        this.fileUploadArea = document.getElementById('fileUploadArea');
+        this.fileSelected = document.getElementById('fileSelected');
+        this.fileName = document.getElementById('fileName');
+        this.removeFileBtn = document.getElementById('removeFile');
+        this.selectedFile = null;
+        
         this.currentPreviewItem = null;
         this.storage = new StorageManager();
         
@@ -151,13 +159,21 @@ class WebPageSaver {
             console.error('存储初始化失败:', e);
         }
         
+        // URL 保存按钮
         this.saveBtn.addEventListener('click', () => this.save());
+        
+        // URL 输入框回车
         this.urlInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.save();
         });
+        
+        // 搜索功能
         this.searchInput.addEventListener('input', () => this.renderHistory());
+        
+        // 清空历史
         this.clearAllBtn.addEventListener('click', () => this.clearAllHistory());
         
+        // 预览模态框事件
         document.getElementById('closeModal').addEventListener('click', () => this.closePreview());
         document.getElementById('closePreviewBtn').addEventListener('click', () => this.closePreview());
         document.getElementById('downloadFromPreview').addEventListener('click', () => this.downloadFromPreview());
@@ -170,8 +186,76 @@ class WebPageSaver {
             if (e.key === 'Escape') this.closePreview();
         });
         
+        // 文件上传事件
+        this.initFileUpload();
+        
         await this.renderHistory();
         await this.updateStorageInfo();
+    }
+    
+    // 初始化文件上传功能
+    initFileUpload() {
+        // 点击上传区域
+        this.fileUploadArea.addEventListener('click', () => {
+            this.fileInput.click();
+        });
+        
+        // 文件选择
+        this.fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.handleFileSelect(e.target.files[0]);
+            }
+        });
+        
+        // 移除文件
+        this.removeFileBtn.addEventListener('click', () => {
+            this.clearSelectedFile();
+        });
+        
+        // 拖拽上传
+        this.fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            this.fileUploadArea.classList.add('dragover');
+        });
+        
+        this.fileUploadArea.addEventListener('dragleave', () => {
+            this.fileUploadArea.classList.remove('dragover');
+        });
+        
+        this.fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            this.fileUploadArea.classList.remove('dragover');
+            
+            if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
+                    this.handleFileSelect(file);
+                } else {
+                    this.showToast('请选择 HTML 文件', 'error');
+                }
+            }
+        });
+    }
+    
+    // 处理文件选择
+    handleFileSelect(file) {
+        this.selectedFile = file;
+        this.fileName.textContent = file.name;
+        this.fileUploadArea.style.display = 'none';
+        this.fileSelected.style.display = 'flex';
+        
+        // 清空 URL 输入
+        this.urlInput.value = '';
+        
+        this.showToast('文件已选择，点击保存按钮处理', 'success');
+    }
+    
+    // 清除选择的文件
+    clearSelectedFile() {
+        this.selectedFile = null;
+        this.fileInput.value = '';
+        this.fileUploadArea.style.display = 'block';
+        this.fileSelected.style.display = 'none';
     }
     
     showToast(message, type = 'info') {
@@ -485,10 +569,16 @@ class WebPageSaver {
     }
     
     async save() {
+        // 检查是否有选中的文件
+        if (this.selectedFile) {
+            return this.saveFromFile();
+        }
+        
+        // 从 URL 保存
         const url = this.urlInput.value.trim();
         
         if (!url) {
-            this.showStatus('请输入有效的URL', 'error');
+            this.showStatus('请输入URL或选择本地文件', 'error');
             return;
         }
         
@@ -509,71 +599,7 @@ class WebPageSaver {
             const response = await this.fetchWithProxy(url);
             let html = await response.text();
             
-            this.updateProgress(20, '正在解析HTML...');
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
-            
-            const title = doc.querySelector('title')?.textContent || url;
-            
-            const options = {
-                inlineImages: document.getElementById('inlineImages').checked,
-                inlineCSS: document.getElementById('inlineCSS').checked,
-                inlineFonts: document.getElementById('inlineFonts').checked,
-                removeScripts: document.getElementById('removeScripts').checked
-            };
-            
-            let baseUrl = url;
-            const baseTag = doc.querySelector('base[href]');
-            if (baseTag) baseUrl = this.resolveUrl(url, baseTag.getAttribute('href'));
-            
-            // 并行处理CSS和图片
-            const tasks = [];
-            
-            if (options.inlineCSS) {
-                tasks.push(this.processStyles(doc, baseUrl, options));
-            }
-            
-            if (options.inlineImages) {
-                tasks.push(this.processAllImages(doc, baseUrl));
-            }
-            
-            if (tasks.length > 0) {
-                this.updateProgress(30, '正在处理资源...');
-                await Promise.all(tasks);
-            }
-            
-            if (options.removeScripts) {
-                this.updateProgress(85, '正在移除脚本...');
-                this.removeScripts(doc);
-            }
-            
-            this.updateProgress(90, '正在生成文件...');
-            this.addSaveInfo(doc, url);
-            
-            const finalHtml = this.serializeHTML(doc);
-            const filename = this.getFilename(url);
-            const size = new Blob([finalHtml]).size;
-            
-            if (size / 1024 / 1024 > 10) {
-                throw new Error(`文件过大 (${(size / 1024 / 1024).toFixed(2)} MB)，超过 10MB 限制`);
-            }
-            
-            await this.addToHistory({
-                id: Date.now().toString(),
-                url, title, filename,
-                content: finalHtml,
-                savedAt: new Date().toISOString(),
-                size
-            });
-            
-            this.updateProgress(100, '完成！');
-            this.doDownload(finalHtml, filename);
-            
-            const imgInfo = this.stats.imagesProcessed > 0 
-                ? ` (图片: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed})` : '';
-            this.showStatus(`✅ 保存成功！(${this.formatSize(size)})${imgInfo}`, 'success');
-            
-            this.urlInput.value = '';
+            await this.processAndSave(html, url);
             
         } catch (error) {
             console.error('Save failed:', error);
@@ -583,6 +609,126 @@ class WebPageSaver {
             this.saveBtn.disabled = false;
             setTimeout(() => this.showProgress(false), 2000);
         }
+    }
+    
+    // 从本地文件保存
+    async saveFromFile() {
+        if (!this.selectedFile) return;
+        
+        this.stats = { imagesProcessed: 0, imagesSuccess: 0, imagesFailed: 0 };
+        this.resourceCache.clear();
+        
+        this.saveBtn.disabled = true;
+        this.showProgress(true);
+        this.updateProgress(0, '正在读取文件...');
+        
+        try {
+            // 读取文件内容
+            const html = await this.readFileAsText(this.selectedFile);
+            
+            this.updateProgress(20, '正在解析HTML...');
+            
+            // 解析 HTML 获取标题
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const title = doc.querySelector('title')?.textContent || this.selectedFile.name;
+            
+            // 使用文件名作为 URL 标识
+            const url = `file://${this.selectedFile.name}`;
+            
+            await this.processAndSave(html, url, title);
+            
+            // 清除选中的文件
+            this.clearSelectedFile();
+            
+        } catch (error) {
+            console.error('File save failed:', error);
+            this.showStatus(`❌ 保存失败: ${error.message}`, 'error');
+            this.showToast('保存失败: ' + error.message, 'error');
+        } finally {
+            this.saveBtn.disabled = false;
+            setTimeout(() => this.showProgress(false), 2000);
+        }
+    }
+    
+    // 读取文件为文本
+    readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(new Error('文件读取失败'));
+            reader.readAsText(file);
+        });
+    }
+    
+    // 处理并保存 HTML
+    async processAndSave(html, url, customTitle = null) {
+        this.updateProgress(20, '正在解析HTML...');
+        
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        
+        const title = customTitle || doc.querySelector('title')?.textContent || url;
+        
+        const options = {
+            inlineImages: document.getElementById('inlineImages').checked,
+            inlineCSS: document.getElementById('inlineCSS').checked,
+            inlineFonts: document.getElementById('inlineFonts').checked,
+            removeScripts: document.getElementById('removeScripts').checked
+        };
+        
+        let baseUrl = url;
+        const baseTag = doc.querySelector('base[href]');
+        if (baseTag) baseUrl = this.resolveUrl(url, baseTag.getAttribute('href'));
+        
+        // 并行处理CSS和图片
+        const tasks = [];
+        
+        if (options.inlineCSS) {
+            tasks.push(this.processStyles(doc, baseUrl, options));
+        }
+        
+        if (options.inlineImages) {
+            tasks.push(this.processAllImages(doc, baseUrl));
+        }
+        
+        if (tasks.length > 0) {
+            this.updateProgress(30, '正在处理资源...');
+            await Promise.all(tasks);
+        }
+        
+        if (options.removeScripts) {
+            this.updateProgress(85, '正在移除脚本...');
+            this.removeScripts(doc);
+        }
+        
+        this.updateProgress(90, '正在生成文件...');
+        this.addSaveInfo(doc, url);
+        
+        const finalHtml = this.serializeHTML(doc);
+        const filename = this.getFilename(url);
+        const size = new Blob([finalHtml]).size;
+        
+        if (size / 1024 / 1024 > 10) {
+            throw new Error(`文件过大 (${(size / 1024 / 1024).toFixed(2)} MB)，超过 10MB 限制`);
+        }
+        
+        await this.addToHistory({
+            id: Date.now().toString(),
+            url, title, filename,
+            content: finalHtml,
+            savedAt: new Date().toISOString(),
+            size
+        });
+        
+        this.updateProgress(100, '完成！');
+        this.doDownload(finalHtml, filename);
+        
+        const imgInfo = this.stats.imagesProcessed > 0 
+            ? ` (图片: ${this.stats.imagesSuccess}/${this.stats.imagesProcessed})` : '';
+        this.showStatus(`✅ 保存成功！(${this.formatSize(size)})${imgInfo}`, 'success');
+        
+        this.urlInput.value = '';
     }
     
     // 并行处理图片
