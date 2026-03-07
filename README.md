@@ -83,6 +83,7 @@ npx serve .
 ├── HTML5 + CSS3 + Vanilla JavaScript
 ├── IndexedDB 存储历史记录
 ├── CORS 代理解决跨域
+├── Blob URL 大文件预览
 └── Vercel 静态部署
 ```
 
@@ -93,6 +94,25 @@ npx serve .
 1. `api.codetabs.com` - 主要代理
 2. `api.allorigins.win` - 备用代理
 3. `corsproxy.io` - 备用代理
+
+### 图片处理流程
+
+```
+1. 检测图片 URL 类型
+   ├── 代理 URL → 提取原始 URL
+   ├── 懒加载属性 (data-src) → 优先使用
+   └── 普通 src → 直接处理
+
+2. 尝试下载图片
+   ├── 通过 CORS 代理下载
+   ├── 转换为 base64
+   └── 内联到 HTML
+
+3. 失败处理
+   ├── 保留原始 URL
+   ├── 设置 referrerpolicy="no-referrer"
+   └── 显示失败提示
+```
 
 ### 微信公众号支持
 
@@ -126,7 +146,24 @@ GET https://down.mptext.top/api/public/v1/download?url=<文章URL>&format=html
 部分网站使用 CDN 防盗链（如 `pic.code-nav.cn`），公共代理无法访问：
 
 - **推荐方案**：使用 SingleFile 扩展保存
+- **SingleFile 配置**：
+  1. 右键点击 SingleFile 图标 → 选项
+  2. 启用 "Save as data URI (Images)"
+  3. 启用 "Include embedded images"
 - **替代方案**：保存后手动下载图片
+
+### 大文件预览
+
+对于超过 **500KB** 的 HTML 文件，预览功能会自动使用 **Blob URL** 代替 `srcdoc`，避免浏览器大小限制。
+
+### 已知限制
+
+| 限制 | 说明 |
+|------|------|
+| 文件大小 | 最大 10MB |
+| 存储空间 | IndexedDB 配额（通常 50MB+） |
+| 图片并发 | 10 个同时下载 |
+| 超时时间 | 图片 3 秒，HTML 15 秒 |
 
 ## 🛠️ 开发
 
@@ -152,6 +189,15 @@ serve . -p 8080
 ```
 
 ## 📝 更新日志
+
+### v1.1.0 (2026-03-07)
+
+- ✅ 大文件预览优化（使用 Blob URL 代替 srcdoc）
+- ✅ 代理 URL 清理功能（自动清理 SingleFile 保存的代理 URL）
+- ✅ 图片下载失败提示（CDN 防盗链警告）
+- ✅ 图片代理 URL 转换（尝试绕过防盗链）
+- ✅ HTML 格式保持优化（添加 meta 标签）
+- ✅ referrer policy 设置（允许加载外部图片）
 
 ### v1.0.0 (2026-03-07)
 
