@@ -577,12 +577,29 @@ class WebPageSaver {
     async fetchWechatArticle(url) {
         const apiUrl = `https://down.mptext.top/api/public/v1/download?url=${encodeURIComponent(url)}&format=html`;
         
-        const response = await fetch(apiUrl);
-        if (!response.ok) {
-            throw new Error('微信文章获取失败');
+        // 使用 CORS 代理调用 API
+        for (let i = 0; i < this.corsProxies.length; i++) {
+            const proxy = this.corsProxies[(this.currentProxyIndex + i) % this.corsProxies.length];
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                
+                const response = await fetch(proxy + encodeURIComponent(apiUrl), {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    this.currentProxyIndex = (this.currentProxyIndex + i) % this.corsProxies.length;
+                    return await response.text();
+                }
+            } catch (error) {
+                console.warn('代理请求失败:', error);
+                continue;
+            }
         }
         
-        return await response.text();
+        throw new Error('微信文章获取失败，所有代理都无法访问');
     }
     
     async save() {
