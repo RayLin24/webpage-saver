@@ -104,8 +104,91 @@
         
         .options-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+        
+        .options-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 12px;
+        }
+        
+        .options-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .options-hint {
+            font-size: 12px;
+            color: #888;
+            font-weight: normal;
+        }
+        
+        .option-card {
+            padding: 12px 15px;
+            background: white;
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .option-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+            transform: translateY(-2px);
+        }
+        
+        .option-card:has(input:checked) {
+            border-color: #667eea;
+            background: linear-gradient(135deg, #f8f9ff 0%, #fff 100%);
+        }
+        
+        .option-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .option-card-header input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+        
+        .option-card-header label {
+            font-weight: 600;
+            color: #333;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 0;
+        }
+        
+        .option-card-desc {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.5;
+            padding-left: 26px;
+        }
+        
+        .option-badge {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        
+        .option-badge.recommended {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
         }
         
         .option-item {
@@ -604,28 +687,64 @@
                     </div>
                 </div>
                 
-                <div class="options">
-                    <label style="margin-bottom: 10px;">保存选项</label>
+                <div class="options-section">
+                    <div class="options-header">
+                        <span>⚙️ 保存选项</span>
+                        <span class="options-hint">点击选项查看详细说明</span>
+                    </div>
+                    
                     <div class="options-grid">
-                        <div class="option-item">
-                            <input type="checkbox" id="inlineImages" checked>
-                            <label for="inlineImages">内联图片</label>
+                        <div class="option-card" data-option="inlineImages">
+                            <div class="option-card-header">
+                                <input type="checkbox" id="inlineImages" checked>
+                                <label for="inlineImages">🖼️ 内联图片</label>
+                                <span class="option-badge recommended">推荐</span>
+                            </div>
+                            <div class="option-card-desc">
+                                将网页图片转换为 Base64 嵌入 HTML，离线也能查看
+                            </div>
                         </div>
-                        <div class="option-item">
-                            <input type="checkbox" id="inlineCSS" checked>
-                            <label for="inlineCSS">内联CSS</label>
+                        
+                        <div class="option-card" data-option="inlineCSS">
+                            <div class="option-card-header">
+                                <input type="checkbox" id="inlineCSS" checked>
+                                <label for="inlineCSS">🎨 内联CSS</label>
+                                <span class="option-badge recommended">推荐</span>
+                            </div>
+                            <div class="option-card-desc">
+                                下载外部样式表并嵌入，保持页面样式完整
+                            </div>
                         </div>
-                        <div class="option-item">
-                            <input type="checkbox" id="inlineFonts" checked>
-                            <label for="inlineFonts">内联字体</label>
+                        
+                        <div class="option-card" data-option="inlineFonts">
+                            <div class="option-card-header">
+                                <input type="checkbox" id="inlineFonts" checked>
+                                <label for="inlineFonts">🔤 内联字体</label>
+                            </div>
+                            <div class="option-card-desc">
+                                将字体文件转换为 Base64 嵌入，保持字体一致
+                            </div>
                         </div>
-                        <div class="option-item">
-                            <input type="checkbox" id="removeScripts">
-                            <label for="removeScripts">移除JS</label>
+                        
+                        <div class="option-card" data-option="removeScripts">
+                            <div class="option-card-header">
+                                <input type="checkbox" id="removeScripts">
+                                <label for="removeScripts">🚫 移除JS</label>
+                            </div>
+                            <div class="option-card-desc">
+                                移除所有脚本，文件更安全轻量
+                            </div>
                         </div>
-                        <div class="option-item">
-                            <input type="checkbox" id="unlockCopy" checked>
-                            <label for="unlockCopy">解除复制限制</label>
+                        
+                        <div class="option-card" data-option="unlockCopy">
+                            <div class="option-card-header">
+                                <input type="checkbox" id="unlockCopy" checked>
+                                <label for="unlockCopy">🔓 解除复制限制</label>
+                                <span class="option-badge recommended">推荐</span>
+                            </div>
+                            <div class="option-card-desc">
+                                自动解除网站复制限制，自由复制文字
+                            </div>
                         </div>
                     </div>
                 </div>
