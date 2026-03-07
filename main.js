@@ -728,6 +728,9 @@ class WebPageSaver {
         const baseTag = doc.querySelector('base[href]');
         if (baseTag) baseUrl = this.resolveUrl(url, baseTag.getAttribute('href'));
         
+        // 清理无效的代理 URL（如 SingleFile 保存的）
+        this.cleanupProxyUrls(doc);
+        
         // 并行处理CSS和图片
         const tasks = [];
         
@@ -781,6 +784,47 @@ class WebPageSaver {
         this.showStatus(`✅ 保存成功！(${this.formatSize(size)})${imgInfo}`, 'success');
         
         this.urlInput.value = '';
+    }
+    
+    // 清理无效的代理 URL（如 SingleFile 保存的）
+    cleanupProxyUrls(doc) {
+        const proxyPatterns = [
+            /api\.codetabs\.com\/v1\/proxy/i,
+            /api\.allorigins\.win\/raw/i,
+            /corsproxy\.io/i
+        ];
+        
+        // 清理图片的代理 URL
+        doc.querySelectorAll('img[src]').forEach(img => {
+            const src = img.getAttribute('src');
+            if (src && proxyPatterns.some(p => p.test(src))) {
+                // 从代理 URL 中提取原始 URL
+                const match = src.match(/[?&](?:url|quest)=([^&]+)/i);
+                if (match) {
+                    const originalUrl = decodeURIComponent(match[1]);
+                    img.setAttribute('src', originalUrl);
+                    img.setAttribute('data-was-proxy', 'true');
+                }
+            }
+        });
+        
+        // 清理 CSS 中的代理 URL
+        doc.querySelectorAll('[style*="url("]').forEach(el => {
+            let style = el.getAttribute('style');
+            proxyPatterns.forEach(pattern => {
+                const matches = style.match(/url\([^)]+\)/gi) || [];
+                matches.forEach(match => {
+                    if (pattern.test(match)) {
+                        const urlMatch = match.match(/[?&](?:url|quest)=([^&)]+)/i);
+                        if (urlMatch) {
+                            const originalUrl = decodeURIComponent(urlMatch[1]);
+                            style = style.replace(match, `url(${originalUrl})`);
+                        }
+                    }
+                });
+            });
+            el.setAttribute('style', style);
+        });
     }
     
     // 并行处理图片
