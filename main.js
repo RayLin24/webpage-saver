@@ -411,7 +411,20 @@ class WebPageSaver {
             }
             this.currentPreviewItem = item;
             this.previewTitle.textContent = item.title || '无标题';
-            this.previewFrame.srcdoc = item.content;
+            
+            // 对于大文件，使用 Blob URL 代替 srcdoc
+            const sizeKB = (item.content.length / 1024).toFixed(1);
+            if (item.content.length > 500000) { // > 500KB
+                console.log('使用 Blob URL 预览大文件:', sizeKB, 'KB');
+                const blob = new Blob([item.content], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                this.previewFrame.src = url;
+                // 保存 URL 以便清理
+                this.currentPreviewBlobUrl = url;
+            } else {
+                this.previewFrame.srcdoc = item.content;
+            }
+            
             this.previewModal.classList.add('active');
             document.body.style.overflow = 'hidden';
         } catch (e) {
@@ -422,7 +435,15 @@ class WebPageSaver {
     
     closePreview() {
         this.previewModal.classList.remove('active');
+        
+        // 清理 Blob URL
+        if (this.currentPreviewBlobUrl) {
+            URL.revokeObjectURL(this.currentPreviewBlobUrl);
+            this.currentPreviewBlobUrl = null;
+        }
+        
         this.previewFrame.srcdoc = '';
+        this.previewFrame.src = 'about:blank';
         document.body.style.overflow = '';
         this.currentPreviewItem = null;
     }
