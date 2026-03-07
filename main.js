@@ -674,7 +674,8 @@ class WebPageSaver {
             inlineImages: document.getElementById('inlineImages').checked,
             inlineCSS: document.getElementById('inlineCSS').checked,
             inlineFonts: document.getElementById('inlineFonts').checked,
-            removeScripts: document.getElementById('removeScripts').checked
+            removeScripts: document.getElementById('removeScripts').checked,
+            unlockCopy: document.getElementById('unlockCopy')?.checked ?? true
         };
         
         let baseUrl = url;
@@ -695,6 +696,11 @@ class WebPageSaver {
         if (tasks.length > 0) {
             this.updateProgress(30, '正在处理资源...');
             await Promise.all(tasks);
+        }
+        
+        // 解除复制限制
+        if (options.unlockCopy) {
+            this.unlockCopyRestrictions(doc);
         }
         
         if (options.removeScripts) {
@@ -971,14 +977,57 @@ class WebPageSaver {
         return newParts.join(', ');
     }
     
+    // 解除复制限制
+    unlockCopyRestrictions(doc) {
+        // 移除禁止复制的事件属性
+        const eventAttrs = ['oncopy', 'oncut', 'onpaste', 'onselectstart', 'oncontextmenu',
+                          'ondragstart', 'onmousedown', 'onmouseup', 'onselect'];
+        doc.querySelectorAll('[' + eventAttrs.join('],[') + ']').forEach(el => {
+            eventAttrs.forEach(attr => el.removeAttribute(attr));
+        });
+        
+        // 添加允许选择的样式
+        const style = doc.createElement('style');
+        style.textContent = `
+            /* WebPage Saver - 解除复制限制 */
+            *, *::before, *::after {
+                -webkit-user-select: text !important;
+                -moz-user-select: text !important;
+                -ms-user-select: text !important;
+                user-select: text !important;
+                -webkit-touch-callout: default !important;
+            }
+        `;
+        doc.head?.appendChild(style);
+    }
+    
     removeScripts(doc) {
         doc.querySelectorAll('script').forEach(el => el.remove());
         doc.querySelectorAll('noscript').forEach(el => el.remove());
         
-        const eventAttrs = ['onclick', 'onload', 'onerror', 'onmouseover', 'onmouseout'];
+        // 移除事件处理属性
+        const eventAttrs = ['onclick', 'onload', 'onerror', 'onmouseover', 'onmouseout',
+                          'oncopy', 'oncut', 'onpaste', 'onselectstart', 'oncontextmenu',
+                          'ondragstart', 'onkeydown', 'onkeyup', 'onkeypress'];
         doc.querySelectorAll('[' + eventAttrs.join('],[') + ']').forEach(el => {
             eventAttrs.forEach(attr => el.removeAttribute(attr));
         });
+        
+        // 如果同时开启了解除复制限制，添加样式
+        if (document.getElementById('unlockCopy')?.checked) {
+            const style = doc.createElement('style');
+            style.textContent = `
+                /* WebPage Saver - 解除复制限制 */
+                *, *::before, *::after {
+                    -webkit-user-select: text !important;
+                    -moz-user-select: text !important;
+                    -ms-user-select: text !important;
+                    user-select: text !important;
+                    -webkit-touch-callout: default !important;
+                }
+            `;
+            doc.head?.appendChild(style);
+        }
     }
     
     addSaveInfo(doc, originalUrl) {
