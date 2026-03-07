@@ -19,8 +19,10 @@
         }
         
         .app {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
+            padding: 15px;
+            min-height: 100vh;
         }
         
         .header {
@@ -53,15 +55,15 @@
         
         .card {
             background: white;
-            border-radius: 16px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            padding: 20px;
         }
         
         .card-title {
-            font-size: 18px;
+            font-size: 16px;
             color: #333;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             padding-bottom: 10px;
             border-bottom: 2px solid #667eea;
             display: flex;
@@ -415,7 +417,7 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            padding: 20px;
+            padding: 15px;
         }
         
         .modal-overlay.active {
@@ -424,17 +426,17 @@
         
         .modal {
             background: white;
-            border-radius: 16px;
+            border-radius: 12px;
             width: 100%;
-            max-width: 1200px;
-            height: 90vh;
+            max-width: 1100px;
+            height: 85vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
         
         .modal-header {
-            padding: 15px 20px;
+            padding: 12px 15px;
             border-bottom: 1px solid #e0e0e0;
             display: flex;
             justify-content: space-between;
@@ -442,7 +444,7 @@
         }
         
         .modal-title {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
             color: #333;
         }
@@ -450,7 +452,7 @@
         .modal-close {
             background: none;
             border: none;
-            font-size: 24px;
+            font-size: 22px;
             cursor: pointer;
             color: #666;
             padding: 5px;
@@ -473,10 +475,10 @@
         }
         
         .modal-footer {
-            padding: 15px 20px;
+            padding: 12px 15px;
             border-top: 1px solid #e0e0e0;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             justify-content: flex-end;
         }
         
@@ -797,8 +799,25 @@
         </div>
         
         <div class="footer">
-            <p>使用 <a href="https://github.com/RayLin24/webpage-saver" target="_blank">GitHub</a> 托管 | 
-               灵感来源于 <a href="https://github.com/gildas-lormeau/SingleFile" target="_blank">SingleFile</a></p>
+            <div class="footer-content">
+                <div class="footer-links">
+                    <a href="https://github.com/RayLin24/webpage-saver" target="_blank">
+                        <svg height="20" width="20" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 6px;">
+                            <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                        </svg>
+                        GitHub
+                    </a>
+                    <span class="footer-divider">|</span>
+                    <a href="https://github.com/RayLin24/webpage-saver#readme" target="_blank">📖 使用说明</a>
+                    <span class="footer-divider">|</span>
+                    <a href="https://github.com/RayLin24/webpage-saver/issues" target="_blank">🐛 问题反馈</a>
+                </div>
+                <div class="footer-info">
+                    <span>Made with ❤️ by RayLin24</span>
+                    <span class="footer-divider">|</span>
+                    <span>MIT License</span>
+                </div>
+            </div>
         </div>
     </div>
     
